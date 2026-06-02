@@ -64,8 +64,9 @@
 
   <!-- AUTO FETCH INFO -->
   <div class="auto-section">
-    <p><strong>Auto-fetched from APIs</strong> — these populate automatically once you enter the domain:</p>
+    <p><strong>Auto-fetched from APIs</strong> — only Client Info is required. Everything else populates automatically:</p>
     <div class="auto-items">
+      <span class="auto-item">📊 SEMrush Site Audit</span>
       <span class="auto-item">⚡ Google PageSpeed</span>
       <span class="auto-item">🏆 SEMrush Competitors</span>
       <span class="auto-item">📍 BrightLocal Citations</span>
@@ -101,35 +102,46 @@
         <input type="text" id="date" placeholder="e.g. June 2026">
         <span class="field-source"></span>
       </div>
+      <div class="field-row">
+        <span class="field-label req">SEMrush Project ID</span>
+        <input type="text" id="semrushProjectId" placeholder="e.g. 6093881">
+        <span class="field-source">SEMrush → Projects → open client → copy number from URL</span>
+      </div>
+      <div style="padding:0 0 6px 0;margin-top:-4px;">
+        <p style="font-size:11px;color:#8A9BB0;font-style:italic;">
+          In SEMrush go to <strong>Projects</strong>, click the client's project, then look at the browser URL — it will show <strong>/projects/XXXXXXXX/</strong> — copy that number here.
+        </p>
+      </div>
     </div>
   </div>
 
   <!-- SEMRUSH -->
   <div class="card">
-    <div class="card-header blue">SEMRUSH SITE AUDIT <span class="auto-badge">PARTIAL AUTO</span></div>
+    <div class="card-header blue">SEMRUSH SITE AUDIT <span class="auto-badge">AUTO-FETCHED</span></div>
     <div class="card-body">
+      <p style="font-size:12px;color:#009ABF;padding:0 0 8px 0;">All fields below auto-populate from your SEMrush campaign. Override any field if needed.</p>
       <div class="field-row">
-        <span class="field-label req">Pages Crawled</span>
+        <span class="field-label">Pages Crawled</span>
         <input type="number" id="pagesCrawled" placeholder="Total pages in audit">
         <span class="field-source">SEMrush → Site Audit</span>
       </div>
       <div class="field-row">
-        <span class="field-label req">Site Health Score</span>
+        <span class="field-label">Site Health Score</span>
         <input type="number" id="siteHealth" placeholder="Out of 100" min="0" max="100">
         <span class="field-source">SEMrush → Site Audit</span>
       </div>
       <div class="field-row">
-        <span class="field-label req">Schema Errors</span>
+        <span class="field-label">Schema Errors</span>
         <input type="number" id="schemaErrors" placeholder="Total schema errors">
         <span class="field-source">SEMrush → Errors</span>
       </div>
       <div class="field-row">
-        <span class="field-label req">Missing Meta Desc</span>
+        <span class="field-label">Missing Meta Desc</span>
         <input type="number" id="missingDesc" placeholder="Pages with no meta description">
         <span class="field-source">SEMrush → Warnings</span>
       </div>
       <div class="field-row">
-        <span class="field-label req">Titles Too Long</span>
+        <span class="field-label">Titles Too Long</span>
         <input type="number" id="titlesTooLong" placeholder="Titles over character limit">
         <span class="field-source">SEMrush → Warnings</span>
       </div>
@@ -226,7 +238,7 @@
 </div>
 
 <script>
-const REQUIRED = ['clientName','domain','preparedBy','pagesCrawled','siteHealth','schemaErrors','missingDesc','titlesTooLong'];
+const REQUIRED = ['clientName','domain','preparedBy','semrushProjectId'];
 let majesticFile = null;
 let screamingFrogFile = null;
 
@@ -359,7 +371,7 @@ async function generate() {
   }
 
   const data = {};
-  ['clientName','domain','preparedBy','location','date','pagesCrawled','siteHealth',
+  ['clientName','domain','preparedBy','location','date','semrushProjectId','pagesCrawled','siteHealth',
    'schemaErrors','missingDesc','titlesTooLong','missingAlt','thinPages','noAnchors',
    'brokenExternal','citationsFound','napConsistency','localRankAvg'].forEach(id => {
     const el = document.getElementById(id);
