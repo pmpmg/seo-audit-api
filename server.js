@@ -15,7 +15,7 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // ── ENV ──────────────────────────────────────────────────────
 const SEMRUSH_KEY     = process.env.SEMRUSH_API_KEY     || "";
-const SEMRUSH_PROJECT = process.env.SEMRUSH_PROJECT_ID  || "18143167"; // Fixed: project ID from URL path, not fid param
+const SEMRUSH_PROJECT = process.env.SEMRUSH_PROJECT_ID  || ""; // Fixed: project ID from URL path, not fid param
 const BRIGHTLOCAL_KEY = process.env.BRIGHTLOCAL_API_KEY || "";
 const ANTHROPIC_KEY   = process.env.ANTHROPIC_API_KEY   || "";
 const PAGESPEED_KEY   = process.env.PAGESPEED_API_KEY   || ""; // Optional — avoids rate limits
