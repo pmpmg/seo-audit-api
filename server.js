@@ -4,303 +4,537 @@ const pptxgen  = require("pptxgenjs");
 const React    = require("react");
 const ReactDOM = require("react-dom/server");
 const sharp    = require("sharp");
+const multer   = require("multer");
+const csv      = require("csv-parse/sync");
 
-const app = express();
+const app    = express();
+const upload = multer({ storage: multer.memoryStorage() });
+
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
+// ── ENV ──────────────────────────────────────────────────────
+const SEMRUSH_KEY    = process.env.SEMRUSH_API_KEY    || "";
+const BRIGHTLOCAL_KEY= process.env.BRIGHTLOCAL_API_KEY|| "";
+const ANTHROPIC_KEY  = process.env.ANTHROPIC_API_KEY  || "";
+
 // ── COLORS ───────────────────────────────────────────────────
 const C = {
-  navy:"1B2A4A", gold:"C8972A", red:"C0442A", steel:"4A6FA5",
-  green:"2E7D52", lightGray:"F2F4F6", midGray:"8A9BB0", white:"FFFFFF", dark:"111827",
+  darkBlue:"12284C", lightBlue:"009ABF", emerald:"00684F",
+  frost:"C2F3FF", mint:"CAE7D9", banana:"FFF281",
+  white:"FFFFFF", offWhite:"F4F7FA", midGray:"6B7A8D",
+  dark:"0D1B2A", red:"C0392B",
 };
 
-// ── ICONS ────────────────────────────────────────────────────
-const { FaServer,FaLink,FaHeading,FaRobot,FaCode,FaTags,
-        FaLayerGroup,FaArrowRight,FaBolt,FaMousePointer,
-        FaClipboardList,FaFlag } = require("react-icons/fa");
-
-async function iconPng(Icon, color, size=256) {
-  const svg = ReactDOM.renderToStaticMarkup(React.createElement(Icon,{color,size:String(size)}));
-  return "image/png;base64," + (await sharp(Buffer.from(svg)).png().toBuffer()).toString("base64");
-}
-async function donutPng(score, color) {
-  const r=100,cx=150,cy=150,sw=22,c=2*Math.PI*r,d=(score/100)*c;
-  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
-    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#E5E7EB" stroke-width="${sw}"/>
-    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#${color}" stroke-width="${sw}"
-      stroke-dasharray="${d} ${c}" stroke-dashoffset="${c/4}" stroke-linecap="round"/></svg>`;
-  return "image/png;base64,"+(await sharp(Buffer.from(svg)).resize(300,300).png().toBuffer()).toString("base64");
-}
-async function barChartPng(data) {
-  const items=[
-    {label:"Missing ALT text",      value:data.missingAlt||0,    color:C.red},
-    {label:"Schema errors",         value:data.schemaErrors||0,  color:C.red},
-    {label:"Low text-to-HTML",      value:data.thinPages||0,     color:C.gold},
-    {label:"Titles too long",       value:data.titlesTooLong||0, color:C.gold},
-    {label:"Missing meta desc",     value:data.missingDesc||0,   color:C.gold},
-    {label:"Broken external links", value:data.brokenExternal||0,color:C.steel},
-    {label:"Missing H1",            value:data.missingH1||0,     color:C.steel},
-  ];
-  const max=Math.max(...items.map(i=>i.value),1);
-  const W=800,barH=36,gap=14,lW=200,margin=20,barMaxW=W-lW-60-margin*2;
-  const H=items.length*(barH+gap)+margin*2;
-  const bars=items.map((it,i)=>{
-    const y=margin+i*(barH+gap), bw=Math.max(4,(it.value/max)*barMaxW);
-    return `<text x="${lW-8}" y="${y+barH/2+5}" text-anchor="end" font-family="Arial" font-size="13" fill="#${C.dark}">${it.label}</text>
-      <rect x="${lW}" y="${y}" width="${bw}" height="${barH}" fill="#${it.color}" rx="3"/>
-      <text x="${lW+bw+8}" y="${y+barH/2+5}" font-family="Arial" font-size="13" font-weight="bold" fill="#${C.dark}">${it.value}</text>`;
-  }).join("");
-  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#${C.lightGray}" rx="8"/>${bars}</svg>`;
-  return "image/png;base64,"+(await sharp(Buffer.from(svg)).resize(W,H).png().toBuffer()).toString("base64");
-}
-
-const ms=()=>({type:"outer",blur:8,offset:2,angle:135,color:"000000",opacity:0.08});
-const footer=(s,pb,d)=>{
-  s.addText(pb||"",{x:0.4,y:5.35,w:3,h:0.2,fontSize:9,color:C.midGray,fontFace:"Calibri"});
-  s.addText(d||"", {x:6.6,y:5.35,w:3,h:0.2,fontSize:9,color:C.midGray,fontFace:"Calibri",align:"right"});
-  s.addShape("line",{x:0.4,y:5.32,w:9.2,h:0,line:{color:"E5E7EB",width:0.5}});
-};
-const slabel=(s,t)=>s.addText(t,{x:0.5,y:0.28,w:9,h:0.22,fontSize:9,color:C.gold,bold:true,charSpacing:4,fontFace:"Calibri"});
-const stitle=(s,t)=>s.addText(t,{x:0.5,y:0.55,w:9,h:0.75,fontSize:34,bold:true,color:C.navy,fontFace:"Georgia"});
-const scard=(p,s,x,y,w,h,num,lbl,sub,ac)=>{
-  s.addShape(p.shapes.RECTANGLE,{x,y,w,h,fill:{color:C.white},shadow:ms(),line:{color:"E5E7EB",width:0.5}});
-  s.addShape(p.shapes.RECTANGLE,{x,y,w,h:0.07,fill:{color:ac},line:{color:ac,width:0}});
-  s.addText(num,{x:x+0.18,y:y+0.18,w:w-0.3,h:0.78,fontSize:40,bold:true,color:ac,fontFace:"Georgia",margin:0});
-  s.addText(lbl,{x:x+0.18,y:y+1.0, w:w-0.3,h:0.28,fontSize:11,bold:true,color:C.navy,fontFace:"Calibri",margin:0});
-  if(sub)s.addText(sub,{x:x+0.18,y:y+1.3,w:w-0.3,h:0.55,fontSize:10,color:C.midGray,fontFace:"Calibri",margin:0});
+// ── BENCHMARKS (top-ranking law firms) ───────────────────────
+const BENCHMARKS = {
+  trustFlow:        { good: 35,  label: "35+",   note: "Top law firm avg" },
+  citationFlow:     { good: 40,  label: "40+",   note: "Top law firm avg" },
+  referringDomains: { good: 200, label: "200+",  note: "Top law firm avg" },
+  totalBacklinks:   { good: 2000,label: "2,000+",note: "Top law firm avg" },
+  napConsistency:   { good: 85,  label: "85%+",  note: "Industry standard" },
+  citationsFound:   { good: 100, label: "100+",  note: "Industry standard" },
+  localRankAvg:     { good: 3,   label: "Top 3", note: "Local pack target", lowerIsBetter: true },
+  psPerformance:    { good: 90,  label: "90+",   note: "Google threshold"  },
+  siteHealth:       { good: 90,  label: "90+",   note: "SEMrush target"    },
 };
 
-// ── GET NARRATIVE FROM CLAUDE ────────────────────────────────
+function scoreColor(val, benchmark) {
+  if (!val || !benchmark) return C.midGray;
+  const good = benchmark.lowerIsBetter ? val <= benchmark.good : val >= benchmark.good;
+  const close = benchmark.lowerIsBetter ? val <= benchmark.good * 1.5 : val >= benchmark.good * 0.7;
+  return good ? C.emerald : close ? C.lightBlue : C.red;
+}
+
+// ── API CALLS ─────────────────────────────────────────────────
+
+// SEMrush domain overview
+async function semrushDomainOverview(domain) {
+  try {
+    const url = `https://api.semrush.com/?type=domain_ranks&key=${SEMRUSH_KEY}&export_columns=Dn,Rk,Or,Ot,Oc,Ad,At,Ac&domain=${domain}&database=us`;
+    const res = await fetch(url);
+    const text = await res.text();
+    const lines = text.trim().split("\n");
+    if (lines.length < 2) return {};
+    const headers = lines[0].split(";");
+    const values  = lines[1].split(";");
+    const row = {};
+    headers.forEach((h,i) => row[h.trim()] = values[i]?.trim());
+    return {
+      organicKeywords: parseInt(row["Organic Keywords"]) || 0,
+      organicTraffic:  parseInt(row["Organic Traffic"])  || 0,
+      authorityScore:  parseInt(row["Authority Score"])  || 0,
+    };
+  } catch(e) { return {}; }
+}
+
+// SEMrush organic competitors
+async function semrushCompetitors(domain) {
+  try {
+    const url = `https://api.semrush.com/?type=domain_organic_organic&key=${SEMRUSH_KEY}&export_columns=Dn,Co,Np,Or,Ot&domain=${domain}&database=us&display_limit=3`;
+    const res  = await fetch(url);
+    const text = await res.text();
+    const lines = text.trim().split("\n");
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(";");
+    return lines.slice(1).map(line => {
+      const vals = line.split(";");
+      const row  = {};
+      headers.forEach((h,i) => row[h.trim()] = vals[i]?.trim());
+      return {
+        domain:          row["Domain"]           || "",
+        commonKeywords:  parseInt(row["Common Keywords"]) || 0,
+        organicKeywords: parseInt(row["Organic Keywords"]) || 0,
+        organicTraffic:  parseInt(row["Organic Traffic"])  || 0,
+      };
+    }).filter(c => c.domain);
+  } catch(e) { return []; }
+}
+
+// SEMrush site audit (if configured)
+async function semrushSiteAudit(domain) {
+  // Returns placeholder — full site audit requires a campaign ID setup
+  // Staff still enters SEMrush audit data manually for now
+  return {};
+}
+
+// BrightLocal citation audit
+async function brightlocalCitationAudit(domain, businessName, location) {
+  try {
+    // Create audit
+    const createRes = await fetch("https://tools.brightlocal.com/seo-tools/api/v4/lsrc/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        "api-key":       BRIGHTLOCAL_KEY,
+        "business-name": businessName || domain,
+        "website-address": `https://${domain}`,
+        "country":       "USA",
+        "city":          location || "",
+        "postcode":      "",
+      })
+    });
+    const createData = await createRes.json();
+    if (!createData?.response?.["report-id"]) return {};
+
+    const reportId = createData.response["report-id"];
+
+    // Poll for results (max 90s)
+    for (let i = 0; i < 18; i++) {
+      await new Promise(r => setTimeout(r, 5000));
+      const pollRes  = await fetch(`https://tools.brightlocal.com/seo-tools/api/v4/lsrc/get?api-key=${BRIGHTLOCAL_KEY}&report-id=${reportId}`);
+      const pollData = await pollRes.json();
+      if (pollData?.response?.["report-status"] === "Complete") {
+        const r = pollData.response;
+        return {
+          citationsFound:  r["citations-found"]    || 0,
+          napConsistency:  r["nap-consistency"]     || 0,
+          activeListings:  r["active-listings"]     || 0,
+          missingListings: r["missing-listings"]    || 0,
+        };
+      }
+    }
+    return {};
+  } catch(e) { return {}; }
+}
+
+// Google PageSpeed
+async function fetchPageSpeed(domain) {
+  try {
+    const base = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
+    const url  = `https://${domain}`;
+    const [mobRes, dskRes] = await Promise.all([
+      fetch(`${base}?url=${encodeURIComponent(url)}&strategy=mobile`),
+      fetch(`${base}?url=${encodeURIComponent(url)}&strategy=desktop`),
+    ]);
+    const [mob, dsk] = await Promise.all([mobRes.json(), dskRes.json()]);
+
+    const getMetric = (data, id) => {
+      const m = data?.lighthouseResult?.audits?.[id];
+      return m?.displayValue || m?.score || null;
+    };
+    const getScore = (data) => Math.round((data?.lighthouseResult?.categories?.performance?.score||0)*100);
+
+    return {
+      psMobile:      getScore(mob),
+      psDesktop:     getScore(dsk),
+      psPerformance: getScore(mob),
+      psFCP:         getMetric(mob, "first-contentful-paint"),
+      psLCP:         getMetric(mob, "largest-contentful-paint"),
+      psTBT:         getMetric(mob, "total-blocking-time"),
+      psCLS:         getMetric(mob, "cumulative-layout-shift"),
+    };
+  } catch(e) { return {}; }
+}
+
+// Claude narrative
 async function getNarrative(data) {
-  const prompt=`You are an SEO analyst. Return ONLY valid JSON (no markdown) with this structure:
-{"executiveSummary":"one sentence","whatIsWorking":[{"title":"...","sub":"..."},{"title":"...","sub":"..."},{"title":"...","sub":"..."},{"title":"...","sub":"..."}],"patterns":[{"num":"01","title":"...","body":"..."},{"num":"02","title":"...","body":"..."},{"num":"03","title":"...","body":"..."}],"actions":[{"n":"1","title":"...","body":"...","impact":"High impact","effort":"Low effort"},{"n":"2","title":"...","body":"...","impact":"...","effort":"..."},{"n":"3","title":"...","body":"...","impact":"...","effort":"..."},{"n":"4","title":"...","body":"...","impact":"...","effort":"..."},{"n":"5","title":"...","body":"...","impact":"...","effort":"..."},{"n":"6","title":"...","body":"...","impact":"...","effort":"..."}],"sequence":[{"week":"Week 1","body":"..."},{"week":"Weeks 1–3","body":"..."},{"week":"Weeks 2–4","body":"..."},{"week":"Ongoing","body":"..."}]}
+  const prompt = `You are an SEO analyst preparing a sales audit for a law firm prospect.
+Write persuasive, plain-language findings. Return ONLY valid JSON:
+{
+  "executiveSummary": "One punchy sentence — what's the biggest opportunity.",
+  "whatIsWorking": [
+    {"title":"...","sub":"..."},
+    {"title":"...","sub":"..."},
+    {"title":"...","sub":"..."},
+    {"title":"...","sub":"..."},
+    {"title":"...","sub":"..."},
+    {"title":"...","sub":"..."}
+  ],
+  "problems": [
+    {"num":"01","title":"...","stat":"...","body":"...","tag":"High impact · Low effort"},
+    {"num":"02","title":"...","stat":"...","body":"...","tag":"High impact · Medium effort"},
+    {"num":"03","title":"...","stat":"...","body":"...","tag":"High impact · High effort"}
+  ],
+  "actions": [
+    {"n":"1","title":"...","body":"...","impact":"High","effort":"Low"},
+    {"n":"2","title":"...","body":"...","impact":"High","effort":"Med"},
+    {"n":"3","title":"...","body":"...","impact":"High","effort":"Med"},
+    {"n":"4","title":"...","body":"...","impact":"High","effort":"Low"},
+    {"n":"5","title":"...","body":"...","impact":"Med","effort":"Low"},
+    {"n":"6","title":"...","body":"...","impact":"High","effort":"High"}
+  ],
+  "sequence": [
+    {"week":"Week 1","body":"..."},
+    {"week":"Weeks 1–3","body":"..."},
+    {"week":"Weeks 2–6","body":"..."},
+    {"week":"Ongoing","body":"..."}
+  ]
+}
 AUDIT DATA: ${JSON.stringify(data)}`;
 
-  const res=await fetch("https://api.anthropic.com/v1/messages",{
-    method:"POST",
-    headers:{"Content-Type":"application/json","x-api-key":process.env.ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01"},
-    body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:1500,messages:[{role:"user",content:prompt}]})
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type":"application/json",
+      "x-api-key": ANTHROPIC_KEY,
+      "anthropic-version":"2023-06-01"
+    },
+    body: JSON.stringify({
+      model:"claude-haiku-4-5-20251001",
+      max_tokens:2000,
+      messages:[{role:"user",content:prompt}]
+    })
   });
-  const json=await res.json();
-  if(json.error) throw new Error(json.error.message);
+  const json = await res.json();
+  if (json.error) throw new Error(json.error.message);
   return JSON.parse(json.content[0].text.replace(/```json|```/g,"").trim());
 }
 
-// ── BUILD PPTX ───────────────────────────────────────────────
-async function buildPptx(data, n) {
-  const pres=new pptxgen();
-  pres.layout="LAYOUT_16x9";
-  const pb=data.preparedBy||"PMP Marketing Group", dom=data.domain||"";
+// ── PARSE MAJESTIC CSV ────────────────────────────────────────
+function parseMajesticCsv(buffer) {
+  try {
+    const text    = buffer.toString("utf8");
+    const records = csv.parse(text, { columns:true, skip_empty_lines:true });
+    if (!records.length) return {};
+    const r = records[0];
+    return {
+      trustFlow:        parseFloat(r["TrustFlow"]        || r["Trust Flow"]         || 0),
+      citationFlow:     parseFloat(r["CitationFlow"]     || r["Citation Flow"]      || 0),
+      referringDomains: parseInt(  r["RefDomains"]       || r["Referring Domains"]  || 0),
+      totalBacklinks:   parseInt(  r["ExtBackLinks"]     || r["Total Backlinks"]    || 0),
+      topicalTrustFlow: parseFloat(r["TopicalTrustFlow"] || r["Topical Trust Flow"] || 0),
+    };
+  } catch(e) { return {}; }
+}
+
+// ── PPTX HELPERS ─────────────────────────────────────────────
+const { FaServer,FaLink,FaHeading,FaRobot,FaCode,FaTags,
+        FaBolt,FaFlag,FaMobile,FaDesktop,FaArrowRight,FaTrophy } = require("react-icons/fa");
+
+async function iconPng(Icon,color,size=256){
+  const svg=ReactDOM.renderToStaticMarkup(React.createElement(Icon,{color,size:String(size)}));
+  return "image/png;base64,"+(await sharp(Buffer.from(svg)).png().toBuffer()).toString("base64");
+}
+async function gaugePng(score,size=280){
+  const color=score>=90?C.emerald:score>=50?C.lightBlue:C.red;
+  const r=100,cx=150,cy=150,sw=22,circ=2*Math.PI*r,dash=(score/100)*circ;
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 300 300">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#E2EAF0" stroke-width="${sw}"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#${color}" stroke-width="${sw}"
+      stroke-dasharray="${dash} ${circ}" stroke-dashoffset="${circ/4}" stroke-linecap="round"/>
+    <text x="150" y="158" text-anchor="middle" font-family="Arial" font-size="52" font-weight="bold" fill="#${color}">${score}</text>
+    <text x="150" y="185" text-anchor="middle" font-family="Arial" font-size="16" fill="#6B7A8D">/100</text>
+  </svg>`;
+  return "image/png;base64,"+(await sharp(Buffer.from(svg)).resize(size,size).png().toBuffer()).toString("base64");
+}
+
+const ms=()=>({type:"outer",blur:10,offset:3,angle:135,color:"000000",opacity:0.07});
+const footer=(s,d)=>{
+  s.addShape("line",{x:0.4,y:5.28,w:9.2,h:0,line:{color:"D8E4EE",width:0.5}});
+  s.addText(`Prepared by ${d.preparedBy} for ${d.clientName}`,{x:0.4,y:5.32,w:7,h:0.22,fontSize:8,color:C.midGray,fontFace:"Calibri"});
+  s.addText(d.domain,{x:7.4,y:5.32,w:2.2,h:0.22,fontSize:8,color:C.midGray,fontFace:"Calibri",align:"right"});
+};
+const slbl=(s,t)=>s.addText(t,{x:0.5,y:0.26,w:9,h:0.2,fontSize:9,color:C.lightBlue,bold:true,charSpacing:4,fontFace:"Calibri"});
+const stit=(s,t)=>s.addText(t,{x:0.5,y:0.52,w:9,h:0.72,fontSize:32,bold:true,color:C.darkBlue,fontFace:"Calibri"});
+
+function kpi(pres,s,x,y,w,h,val,lbl,sub,color){
+  s.addShape(pres.shapes.RECTANGLE,{x,y,w,h,fill:{color:C.white},shadow:ms(),line:{color:"E2EAF0",width:0.5}});
+  s.addShape(pres.shapes.RECTANGLE,{x,y,w,h:0.06,fill:{color},line:{color,width:0}});
+  s.addText(val,{x:x+0.18,y:y+0.18,w:w-0.3,h:0.72,fontSize:36,bold:true,color,fontFace:"Calibri",margin:0});
+  s.addText(lbl,{x:x+0.18,y:y+0.94,w:w-0.3,h:0.28,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
+  if(sub)s.addText(sub,{x:x+0.18,y:y+1.24,w:w-0.3,h:0.5,fontSize:9,color:C.midGray,fontFace:"Calibri",margin:0});
+}
+
+// ── BUILD PPTX ────────────────────────────────────────────────
+async function buildPptx(data, narrative) {
+  const pres = new pptxgen();
+  pres.layout = "LAYOUT_16x9";
+  const D = data;
 
   // S1 COVER
-  const s1=pres.addSlide(); s1.background={color:C.navy};
-  s1.addShape(pres.shapes.RECTANGLE,{x:0,y:0,w:0.18,h:5.625,fill:{color:C.gold},line:{color:C.gold,width:0}});
-  s1.addText("TECHNICAL SEO AUDIT",{x:0.45,y:1.1,w:9.1,h:0.3,fontSize:10,color:C.gold,bold:true,charSpacing:5,fontFace:"Calibri"});
-  s1.addText(n.executiveSummary||"What is working, what is costing you, and what to fix first.",{x:0.45,y:1.55,w:8.5,h:0.45,fontSize:18,color:"AABBD0",fontFace:"Calibri",italic:true});
-  s1.addText(dom,{x:0.45,y:2.2,w:9,h:0.7,fontSize:42,bold:true,color:C.white,fontFace:"Georgia"});
-  s1.addText(data.clientName||"",{x:0.45,y:2.95,w:9,h:0.4,fontSize:20,color:C.gold,fontFace:"Calibri"});
-  s1.addShape(pres.shapes.RECTANGLE,{x:0.45,y:3.52,w:9.1,h:0.015,fill:{color:"3A5070"},line:{color:"3A5070",width:0}});
-  s1.addText([{text:`Prepared by ${pb}`,options:{color:"7A9BB5"}},{text:"   ·   ",options:{color:"4A6A85"}},{text:data.date||"",options:{color:"7A9BB5"}},{text:"   ·   ",options:{color:"4A6A85"}},{text:`Source: ${data.source||"SEMrush Site Audit"}`,options:{color:"7A9BB5"}},{text:"   ·   ",options:{color:"4A6A85"}},{text:`${data.pagesCrawled||0} pages crawled`,options:{color:"7A9BB5"}}],{x:0.45,y:3.68,w:9.1,h:0.28,fontSize:10,fontFace:"Calibri"});
+  const s1=pres.addSlide(); s1.background={color:C.darkBlue};
+  s1.addShape(pres.shapes.RECTANGLE,{x:0,y:0,w:0.22,h:5.625,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
+  s1.addShape(pres.shapes.RECTANGLE,{x:0,y:5.1,w:10,h:0.525,fill:{color:"0C1E3A"},line:{color:"0C1E3A",width:0}});
+  s1.addText("SEO OPPORTUNITY AUDIT",{x:0.5,y:0.9,w:9,h:0.28,fontSize:11,color:C.lightBlue,bold:true,charSpacing:5,fontFace:"Calibri"});
+  s1.addText("What's working.\nWhat's costing you clients.\nWhat to fix first.",{x:0.5,y:1.3,w:6.5,h:1.8,fontSize:28,bold:true,color:C.white,fontFace:"Calibri",valign:"top"});
+  s1.addText(D.domain,{x:0.5,y:3.1,w:9,h:0.6,fontSize:22,color:C.lightBlue,fontFace:"Calibri",bold:true});
+  s1.addText(D.clientName,{x:0.5,y:3.68,w:9,h:0.3,fontSize:14,color:"A8C4D8",fontFace:"Calibri"});
+  s1.addShape(pres.shapes.RECTANGLE,{x:0.5,y:4.1,w:9,h:0.015,fill:{color:"1E3A5A"},line:{color:"1E3A5A",width:0}});
+  s1.addText(`Prepared by ${D.preparedBy}   ·   ${D.date||""}   ·   ${D.pagesCrawled||0} pages crawled`,{x:0.5,y:4.22,w:9,h:0.25,fontSize:9,color:"6A8FA8",fontFace:"Calibri"});
 
   // S2 BOTTOM LINE
   const s2=pres.addSlide(); s2.background={color:C.white};
-  slabel(s2,"THE BOTTOM LINE"); stitle(s2,"The foundation is solid. Three patterns hold it back.");
-  s2.addText(n.executiveSummary||"",{x:0.5,y:1.42,w:9,h:0.55,fontSize:12,color:C.dark,fontFace:"Calibri"});
-  scard(pres,s2,0.4,2.1,2.9,2.15,`${data.siteHealth||0}/100`,"SITE HEALTH","Solid base, clear ceiling to climb.",C.navy);
-  scard(pres,s2,3.55,2.1,2.9,2.15,`${data.schemaErrors||0}`,"SCHEMA ERRORS","One broken template, repeated sitewide.",C.red);
-  scard(pres,s2,6.7,2.1,2.9,2.15,`${(data.missingDesc||0)+(data.titlesTooLong||0)}`,"METADATA GAPS",`${data.missingDesc||0} missing descriptions, ${data.titlesTooLong||0} titles cut off.`,C.gold);
-  footer(s2,pb,dom);
+  slbl(s2,"THE BOTTOM LINE"); stit(s2,"Four numbers that tell the story.");
+  s2.addText(narrative.executiveSummary||"",{x:0.5,y:1.38,w:9,h:0.4,fontSize:11,color:C.dark,fontFace:"Calibri"});
+  kpi(pres,s2,0.4, 1.95,2.15,2.1,`${D.siteHealth||0}/100`,"SITE HEALTH",    "Overall technical score (SEMrush)", scoreColor(D.siteHealth,BENCHMARKS.siteHealth));
+  kpi(pres,s2,2.72,1.95,2.15,2.1,`${D.psPerformance||0}/100`,"PAGE SPEED", "Google PageSpeed mobile score",     scoreColor(D.psPerformance,BENCHMARKS.psPerformance));
+  kpi(pres,s2,5.04,1.95,2.15,2.1,`${D.schemaErrors||0}`,"SCHEMA ERRORS",   "One broken template, sitewide",    D.schemaErrors>0?C.red:C.emerald);
+  kpi(pres,s2,7.36,1.95,2.15,2.1,`${D.napConsistency||0}%`,"NAP CONSISTENCY","Local citation accuracy",        scoreColor(D.napConsistency,BENCHMARKS.napConsistency));
+  s2.addShape(pres.shapes.RECTANGLE,{x:0.4,y:4.22,w:9.2,h:0.65,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
+  s2.addText(`💡  ${narrative.executiveSummary||"Key opportunities identified across technical SEO, page speed, and local search."}`,{x:0.6,y:4.27,w:8.8,h:0.55,fontSize:10,color:C.white,fontFace:"Calibri"});
+  footer(s2,D);
 
-  // S3 SCORECARD
+  // S3 WHAT'S WORKING
   const s3=pres.addSlide(); s3.background={color:C.white};
-  slabel(s3,"SITE HEALTH SCORECARD"); stitle(s3,`Two scores, ${data.pagesCrawled||0} pages of evidence.`);
-  s3.addImage({data:await donutPng(data.siteHealth||0,C.navy),x:0.4,y:1.35,w:2.2,h:2.2});
-  s3.addText(`${data.siteHealth||0}`,{x:0.4,y:1.9,w:2.2,h:1.1,fontSize:44,bold:true,color:C.navy,fontFace:"Georgia",align:"center"});
-  s3.addText("/100",{x:0.4,y:2.85,w:2.2,h:0.3,fontSize:14,color:C.midGray,fontFace:"Calibri",align:"center"});
-  s3.addText("Site Health",{x:0.4,y:3.6,w:2.2,h:0.3,fontSize:12,bold:true,color:C.navy,fontFace:"Calibri",align:"center"});
-  s3.addImage({data:await donutPng(data.aiReadiness||0,C.gold),x:3.1,y:1.35,w:2.2,h:2.2});
-  s3.addText(`${data.aiReadiness||0}`,{x:3.1,y:1.9,w:2.2,h:1.1,fontSize:44,bold:true,color:C.gold,fontFace:"Georgia",align:"center"});
-  s3.addText("/100",{x:3.1,y:2.85,w:2.2,h:0.3,fontSize:14,color:C.midGray,fontFace:"Calibri",align:"center"});
-  s3.addText("AI Search Readiness",{x:3.1,y:3.6,w:2.2,h:0.3,fontSize:12,bold:true,color:C.navy,fontFace:"Calibri",align:"center"});
-  s3.addText("AI Search has the most room to move. Clean schema and descriptive links are exactly what it measures.",{x:0.4,y:4.0,w:5.0,h:0.6,fontSize:10,color:C.midGray,fontFace:"Calibri",italic:true,align:"center"});
-  s3.addText("Status of every crawled URL",{x:5.7,y:1.1,w:4.1,h:0.25,fontSize:10,bold:true,color:C.gold,fontFace:"Calibri",charSpacing:2});
-  [{val:data.pagesCrawled||0,label:"Pages crawled",color:C.navy},{val:data.pages200||0,label:"Returning 200 OK",color:C.green},{val:data.redirects||0,label:"Redirects (3xx)",color:C.gold},{val:data.errors||0,label:"Error pages (4xx)",color:C.red}].forEach((c,i)=>{
-    const x=5.7+(i%2)*2.07, y=1.3+Math.floor(i/2)*1.12;
-    s3.addShape(pres.shapes.RECTANGLE,{x,y,w:1.95,h:1.0,fill:{color:C.white},shadow:ms(),line:{color:"E5E7EB",width:0.5}});
-    s3.addShape(pres.shapes.RECTANGLE,{x,y,w:0.07,h:1.0,fill:{color:c.color},line:{color:c.color,width:0}});
-    s3.addText(`${c.val}`,{x:x+0.18,y:y+0.1,w:1.7,h:0.52,fontSize:30,bold:true,color:c.color,fontFace:"Georgia",margin:0});
-    s3.addText(c.label,{x:x+0.18,y:y+0.62,w:1.7,h:0.3,fontSize:10,color:C.midGray,fontFace:"Calibri",margin:0});
-  });
-  footer(s3,pb,dom);
+  slbl(s3,"WHAT'S WORKING"); stit(s3,"The expensive stuff is already right.");
+  s3.addText("These are the issues that cost the most to fix after the fact — none of them are problems here.",{x:0.5,y:1.38,w:9,h:0.35,fontSize:11,color:C.dark,fontFace:"Calibri"});
+  const wins=narrative.whatIsWorking||[
+    {title:"Zero server errors",       sub:`No 5xx failures across ${D.pagesCrawled||0} pages.`},
+    {title:"No broken internal links", sub:"Internal link graph is fully intact."},
+    {title:"Every page has a title",   sub:"No missing or empty title tags found."},
+    {title:"Site is fully crawlable",  sub:"No robots.txt or noindex blocking core pages."},
+    {title:"HTTPS secure",             sub:"SSL certificate valid across all pages."},
+    {title:"Mobile responsive",        sub:"Site renders correctly on mobile devices."},
+  ];
+  const wIcons=[FaServer,FaLink,FaHeading,FaRobot,FaCode,FaTrophy];
+  for(let i=0;i<6;i++){
+    const col=i%3,row=Math.floor(i/3),x=0.4+col*3.1,y=1.9+row*1.55;
+    const ic=await iconPng(wIcons[i],"#"+C.emerald,256);
+    s3.addShape(pres.shapes.RECTANGLE,{x,y,w:2.9,h:1.35,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+    s3.addShape(pres.shapes.RECTANGLE,{x,y,w:2.9,h:0.05,fill:{color:C.emerald},line:{color:C.emerald,width:0}});
+    s3.addShape(pres.shapes.OVAL,{x:x+0.18,y:y+0.22,w:0.5,h:0.5,fill:{color:"CAE7D9"},line:{color:"CAE7D9",width:0}});
+    s3.addImage({data:ic,x:x+0.22,y:y+0.27,w:0.42,h:0.42});
+    s3.addText(wins[i]?.title||"",{x:x+0.82,y:y+0.18,w:1.95,h:0.32,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
+    s3.addText(wins[i]?.sub||"",  {x:x+0.82,y:y+0.52,w:1.95,h:0.55,fontSize:9,color:C.midGray,fontFace:"Calibri",margin:0});
+  }
+  footer(s3,D);
 
-  // S4 WORKING
+  // S4 PROBLEMS
   const s4=pres.addSlide(); s4.background={color:C.white};
-  slabel(s4,"WHAT IS ALREADY WORKING"); stitle(s4,"The expensive stuff is right.");
-  s4.addText("These are the issues that cost the most to fix after the fact. None of them are here.",{x:0.5,y:1.42,w:9,h:0.35,fontSize:12,color:C.dark,fontFace:"Calibri"});
-  const wins=n.whatIsWorking||[{title:"Zero server errors",sub:`No 5xx failures across ${data.pagesCrawled||0} pages.`},{title:"No broken internal links",sub:"Internal link graph is intact."},{title:"Every page has a title",sub:"No missing or empty title tags."},{title:"Nothing blocks the crawl",sub:"Core pages are fully accessible."}];
-  for(let i=0;i<4;i++){
-    const x=0.4+i*2.35;
-    const icons=[FaServer,FaLink,FaHeading,FaRobot];
-    s4.addShape(pres.shapes.RECTANGLE,{x,y:1.9,w:2.2,h:2.7,fill:{color:C.lightGray},shadow:ms(),line:{color:"E5E7EB",width:0.3}});
-    s4.addShape(pres.shapes.OVAL,{x:x+0.75,y:2.05,w:0.7,h:0.7,fill:{color:"D1FAE5"},line:{color:"D1FAE5",width:0}});
-    s4.addImage({data:await iconPng(icons[i],"#"+C.green),x:x+0.83,y:2.13,w:0.54,h:0.54});
-    s4.addText(wins[i]?.title||"",{x:x+0.14,y:2.85,w:1.92,h:0.55,fontSize:12,bold:true,color:C.navy,fontFace:"Calibri",align:"center"});
-    s4.addText(wins[i]?.sub||"",{x:x+0.14,y:3.45,w:1.92,h:0.7,fontSize:10,color:C.midGray,fontFace:"Calibri",align:"center"});
-  }
-  footer(s4,pb,dom);
-
-  // S5 PATTERNS
-  const s5=pres.addSlide(); s5.background={color:C.white};
-  slabel(s5,"WHAT IS HOLDING IT BACK"); stitle(s5,"Three patterns, not a hundred problems.");
-  const pats=n.patterns||[{num:"01",title:"Broken structured data",body:`${data.schemaErrors||0} schema errors from one broken template.`},{num:"02",title:"Metadata gaps",body:`${data.missingDesc||0} pages with no description and ${data.titlesTooLong||0} titles too long.`},{num:"03",title:"Thin signals",body:`${data.thinPages||0} light pages with weak anchor text.`}];
-  const pcols=[C.red,C.gold,C.steel], picons=[FaCode,FaTags,FaLayerGroup];
+  slbl(s4,"WHAT'S COSTING YOU CLIENTS"); stit(s4,"Three patterns, not a hundred problems.");
+  s4.addText("Each of these is a template-level fix — meaning one change clears hundreds of issues at once.",{x:0.5,y:1.38,w:9,h:0.35,fontSize:11,color:C.dark,fontFace:"Calibri"});
+  const probs=narrative.problems||[
+    {num:"01",title:"Broken structured data",stat:`${D.schemaErrors||0} errors`,body:`Every page carries the same broken LocalBusiness schema. One template fix clears all ${D.schemaErrors||0}.`,tag:"High impact · Low effort",color:C.red},
+    {num:"02",title:"Metadata gaps",stat:`${(D.missingDesc||0)+(D.titlesTooLong||0)} pages affected`,body:`${D.missingDesc||0} pages have no meta description. ${D.titlesTooLong||0} titles are cut off in search results.`,tag:"High impact · Medium effort",color:C.lightBlue},
+    {num:"03",title:"Thin content & weak links",stat:`${D.thinPages||0} light pages`,body:`${D.thinPages||0} pages appear thin to search engines. ${D.noAnchors||0} internal links carry no anchor text.`,tag:"High impact · High effort",color:C.emerald},
+  ];
+  const pIcons=[FaCode,FaTags,FaBolt];
+  const pColors=[C.red,C.lightBlue,C.emerald];
   for(let i=0;i<3;i++){
-    const x=0.4+i*3.1, p=pats[i];
-    s5.addShape(pres.shapes.RECTANGLE,{x,y:1.85,w:2.9,h:2.9,fill:{color:C.white},shadow:ms(),line:{color:"E5E7EB",width:0.5}});
-    s5.addShape(pres.shapes.RECTANGLE,{x,y:1.85,w:2.9,h:0.72,fill:{color:pcols[i]},line:{color:pcols[i],width:0}});
-    s5.addImage({data:await iconPng(picons[i],"#FFFFFF"),x:x+0.18,y:1.98,w:0.38,h:0.38});
-    s5.addText(p.num,{x:x+0.1,y:1.87,w:2.7,h:0.68,fontSize:28,bold:true,color:C.white,fontFace:"Georgia",align:"right",margin:0});
-    s5.addText(p.title,{x:x+0.18,y:2.65,w:2.55,h:0.5,fontSize:13,bold:true,color:C.navy,fontFace:"Calibri"});
-    s5.addText(p.body,{x:x+0.18,y:3.2,w:2.55,h:1.2,fontSize:10.5,color:C.dark,fontFace:"Calibri"});
+    const p=probs[i]||{}, x=0.4+i*3.1;
+    const ic=await iconPng(pIcons[i],"#FFFFFF",256);
+    s4.addShape(pres.shapes.RECTANGLE,{x,y:1.9,w:2.9,h:3.15,fill:{color:C.white},shadow:ms(),line:{color:"E2EAF0",width:0.5}});
+    s4.addShape(pres.shapes.RECTANGLE,{x,y:1.9,w:2.9,h:0.68,fill:{color:pColors[i]},line:{color:pColors[i],width:0}});
+    s4.addImage({data:ic,x:x+0.18,y:2.02,w:0.38,h:0.38});
+    s4.addText(p.num||`0${i+1}`,{x:x+0.1,y:1.92,w:2.7,h:0.64,fontSize:26,bold:true,color:C.white,fontFace:"Calibri",align:"right",margin:0});
+    s4.addText(p.title||"",{x:x+0.18,y:2.65,w:2.55,h:0.35,fontSize:12,bold:true,color:C.darkBlue,fontFace:"Calibri"});
+    s4.addText(p.stat||"", {x:x+0.18,y:3.0, w:2.55,h:0.26,fontSize:10,bold:true,color:pColors[i],fontFace:"Calibri"});
+    s4.addText(p.body||"", {x:x+0.18,y:3.28,w:2.55,h:1.3, fontSize:9.5,color:C.dark,fontFace:"Calibri"});
+    s4.addShape(pres.shapes.RECTANGLE,{x:x+0.18,y:4.75,w:2.55,h:0.22,fill:{color:C.offWhite},line:{color:"E2EAF0",width:0}});
+    s4.addText(p.tag||"",{x:x+0.18,y:4.75,w:2.55,h:0.22,fontSize:8,bold:true,color:C.midGray,fontFace:"Calibri",align:"center"});
   }
-  footer(s5,pb,dom);
+  footer(s4,D);
 
-  // S6 PATTERN 1
+  // S5 PAGE SPEED
+  const s5=pres.addSlide(); s5.background={color:C.white};
+  slbl(s5,"SPEED & CORE WEB VITALS · Google PageSpeed Insights");
+  stit(s5,"Slow pages lose clients before they read a word.");
+  s5.addText("Google uses page speed as a direct ranking factor. For law firms, every second of delay costs consultations.",{x:0.5,y:1.38,w:9,h:0.35,fontSize:11,color:C.dark,fontFace:"Calibri"});
+  const mg=await gaugePng(D.psMobile||D.psPerformance||0);
+  const dg=await gaugePng(D.psDesktop||0);
+  s5.addImage({data:mg,x:0.5,y:1.85,w:2.1,h:2.1});
+  s5.addImage({data:dg,x:2.9,y:1.85,w:2.1,h:2.1});
+  const mbi=await iconPng(FaMobile,"#"+C.darkBlue,128);
+  const dki=await iconPng(FaDesktop,"#"+C.darkBlue,128);
+  s5.addImage({data:mbi,x:0.88,y:4.05,w:0.32,h:0.32});
+  s5.addImage({data:dki,x:3.28,y:4.05,w:0.32,h:0.32});
+  s5.addText("Mobile", {x:0.5,y:4.08,w:2.1,h:0.28,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri",align:"center"});
+  s5.addText("Desktop",{x:2.9,y:4.08,w:2.1,h:0.28,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri",align:"center"});
+  s5.addText("Most law firm searches happen on mobile — this score must be above 90.",{x:0.5,y:4.45,w:4.5,h:0.4,fontSize:9,color:C.midGray,fontFace:"Calibri",italic:true,align:"center"});
+  const vitals=[
+    {label:"First Contentful Paint",   value:D.psFCP||"—", good:"< 1.8s"},
+    {label:"Largest Contentful Paint", value:D.psLCP||"—", good:"< 2.5s"},
+    {label:"Total Blocking Time",      value:D.psTBT||"—", good:"< 200ms"},
+    {label:"Cumulative Layout Shift",  value:D.psCLS||"—", good:"< 0.1"},
+  ];
+  s5.addText("CORE WEB VITALS",{x:5.3,y:1.78,w:4.3,h:0.22,fontSize:9,bold:true,color:C.lightBlue,charSpacing:3,fontFace:"Calibri"});
+  vitals.forEach((v,i)=>{
+    const y=2.1+i*0.82;
+    s5.addShape(pres.shapes.RECTANGLE,{x:5.3,y,w:4.3,h:0.7,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+    s5.addShape(pres.shapes.RECTANGLE,{x:5.3,y,w:0.06,h:0.7,fill:{color:C.red},line:{color:C.red,width:0}});
+    s5.addText(v.label,{x:5.48,y:y+0.08,w:2.4,h:0.25,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
+    s5.addText(`Goal: ${v.good}`,{x:5.48,y:y+0.35,w:2.4,h:0.22,fontSize:9,color:C.midGray,fontFace:"Calibri",margin:0});
+    s5.addText(String(v.value),{x:8.5,y:y+0.15,w:1.0,h:0.35,fontSize:18,bold:true,color:C.red,fontFace:"Calibri",align:"right",margin:0});
+  });
+  footer(s5,D);
+
+  // S6 LOCAL SEO WITH BENCHMARKS + COMPETITORS
   const s6=pres.addSlide(); s6.background={color:C.white};
-  slabel(s6,"PATTERN 1 · ERRORS"); stitle(s6,"Structured data: one fix, sitewide.");
-  s6.addShape(pres.shapes.RECTANGLE,{x:0.4,y:1.35,w:3.5,h:3.5,fill:{color:C.navy},line:{color:C.navy,width:0}});
-  s6.addImage({data:await iconPng(FaCode,"#"+C.gold),x:0.75,y:1.6,w:0.65,h:0.65});
-  s6.addText(`${data.schemaErrors||0}`,{x:0.4,y:2.2,w:3.5,h:1.4,fontSize:80,bold:true,color:C.gold,fontFace:"Georgia",align:"center"});
-  s6.addText("schema instances failing the same check",{x:0.55,y:3.65,w:3.2,h:0.5,fontSize:10,color:"7A9BB5",fontFace:"Calibri",align:"center"});
-  s6.addText("The root cause",{x:4.2,y:1.4,w:5.4,h:0.28,fontSize:10,bold:true,color:C.gold,charSpacing:2,fontFace:"Calibri"});
-  s6.addText(pats[0]?.body||"",{x:4.2,y:1.73,w:5.4,h:0.7,fontSize:11,color:C.dark,fontFace:"Calibri"});
-  s6.addText("Why it matters",{x:4.2,y:2.55,w:5.4,h:0.28,fontSize:10,bold:true,color:C.gold,charSpacing:2,fontFace:"Calibri"});
-  s6.addText("Schema is how Google and AI answer engines read who you are and where you practice. Invalid schema forfeits rich results.",{x:4.2,y:2.88,w:5.4,h:0.75,fontSize:11,color:C.dark,fontFace:"Calibri"});
-  s6.addShape(pres.shapes.RECTANGLE,{x:4.2,y:3.85,w:1.9,h:0.52,fill:{color:C.white},line:{color:C.navy,width:1.5}});
-  s6.addText("Fix 1 template",{x:4.2,y:3.85,w:1.9,h:0.52,fontSize:11,bold:true,color:C.navy,fontFace:"Calibri",align:"center"});
-  s6.addImage({data:await iconPng(FaArrowRight,"#"+C.navy,128),x:6.2,y:4.0,w:0.3,h:0.22});
-  s6.addShape(pres.shapes.RECTANGLE,{x:6.65,y:3.85,w:1.9,h:0.52,fill:{color:C.green},line:{color:C.green,width:0}});
-  s6.addText(`Clear all ${data.schemaErrors||0}`,{x:6.65,y:3.85,w:1.9,h:0.52,fontSize:11,bold:true,color:C.white,fontFace:"Calibri",align:"center"});
-  footer(s6,pb,dom);
+  slbl(s6,"LOCAL SEO SNAPSHOT · BrightLocal + Majestic + SEMrush");
+  stit(s6,"Local search is where law firm clients start.");
 
-  // S7 PATTERN 2
+  // Comparison table
+  const competitors = D.competitors || [];
+  const hasComps    = competitors.length > 0;
+
+  // Header row
+  const colW   = hasComps ? 2.1 : 3.0;
+  const cols   = hasComps
+    ? ["METRIC","YOUR SITE","COMPETITOR 1","COMPETITOR 2","BENCHMARK"]
+    : ["METRIC","YOUR SITE","BENCHMARK","TARGET"];
+  const colXs  = hasComps
+    ? [0.4, 2.55, 4.7, 6.85, 8.5]
+    : [0.4, 3.5,  6.0, 8.0];
+
+  // Draw header
+  s6.addShape(pres.shapes.RECTANGLE,{x:0.4,y:1.5,w:9.2,h:0.35,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
+  cols.forEach((c,i)=>{
+    s6.addText(c,{x:colXs[i],y:1.52,w:colW,h:0.3,fontSize:8,bold:true,color:C.white,fontFace:"Calibri",margin:0});
+  });
+
+  const rows = [
+    { label:"Trust Flow",         client:D.trustFlow,        comp1:competitors[0]?.trustFlow,    comp2:competitors[1]?.trustFlow,    bench:BENCHMARKS.trustFlow },
+    { label:"Citation Flow",      client:D.citationFlow,     comp1:competitors[0]?.citationFlow, comp2:competitors[1]?.citationFlow, bench:BENCHMARKS.citationFlow },
+    { label:"Referring Domains",  client:D.referringDomains, comp1:competitors[0]?.referringDomains,comp2:competitors[1]?.referringDomains,bench:BENCHMARKS.referringDomains },
+    { label:"NAP Consistency",    client:`${D.napConsistency||0}%`, comp1:competitors[0]?.napConsistency?`${competitors[0].napConsistency}%`:null, comp2:null, bench:BENCHMARKS.napConsistency, suffix:"%" },
+    { label:"Citations Found",    client:D.citationsFound,   comp1:null,                         comp2:null,                         bench:BENCHMARKS.citationsFound },
+    { label:"Local Rank Avg",     client:`#${D.localRankAvg||"—"}`, comp1:competitors[0]?.localRank?`#${competitors[0].localRank}`:null,comp2:competitors[1]?.localRank?`#${competitors[1].localRank}`:null,bench:BENCHMARKS.localRankAvg },
+  ];
+
+  rows.forEach((row,i)=>{
+    const y=1.88+i*0.55;
+    const bg=i%2===0?C.white:C.offWhite;
+    s6.addShape(pres.shapes.RECTANGLE,{x:0.4,y,w:9.2,h:0.52,fill:{color:bg},line:{color:"E2EAF0",width:0.3}});
+    s6.addText(row.label,{x:colXs[0],y:y+0.1,w:2.0,h:0.32,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
+    const clientColor=scoreColor(parseFloat(String(row.client)),row.bench);
+    s6.addText(String(row.client||"—"),{x:colXs[1],y:y+0.1,w:colW,h:0.32,fontSize:12,bold:true,color:clientColor,fontFace:"Calibri",margin:0});
+    if(hasComps){
+      s6.addText(String(row.comp1||"—"),{x:colXs[2],y:y+0.1,w:colW,h:0.32,fontSize:11,color:C.midGray,fontFace:"Calibri",margin:0});
+      s6.addText(String(row.comp2||"—"),{x:colXs[3],y:y+0.1,w:colW,h:0.32,fontSize:11,color:C.midGray,fontFace:"Calibri",margin:0});
+      s6.addText(row.bench?.label||"—",{x:colXs[4],y:y+0.1,w:1.5,h:0.32,fontSize:10,bold:true,color:C.emerald,fontFace:"Calibri",margin:0});
+    } else {
+      s6.addText(row.bench?.label||"—",{x:colXs[2],y:y+0.1,w:colW,h:0.32,fontSize:11,bold:true,color:C.emerald,fontFace:"Calibri",margin:0});
+      s6.addText(row.bench?.note||"",  {x:colXs[3],y:y+0.1,w:colW,h:0.32,fontSize:9,color:C.midGray,fontFace:"Calibri",italic:true,margin:0});
+    }
+  });
+
+  // Legend
+  s6.addShape(pres.shapes.RECTANGLE,{x:0.4,y:5.2,w:9.2,h:0.15,fill:{color:C.offWhite},line:{color:"E2EAF0",width:0}});
+  s6.addShape(pres.shapes.RECTANGLE,{x:0.5,y:5.23,w:0.18,h:0.08,fill:{color:C.emerald},line:{color:C.emerald,width:0}});
+  s6.addText("At/above benchmark",{x:0.72,y:5.21,w:2.2,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri"});
+  s6.addShape(pres.shapes.RECTANGLE,{x:3.0,y:5.23,w:0.18,h:0.08,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
+  s6.addText("Close to benchmark",{x:3.22,y:5.21,w:2.0,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri"});
+  s6.addShape(pres.shapes.RECTANGLE,{x:5.4,y:5.23,w:0.18,h:0.08,fill:{color:C.red},line:{color:C.red,width:0}});
+  s6.addText("Below benchmark",{x:5.62,y:5.21,w:2.0,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri"});
+  footer(s6,D);
+
+  // S7 RECOMMENDATIONS
   const s7=pres.addSlide(); s7.background={color:C.white};
-  slabel(s7,"PATTERN 2 · WARNINGS"); stitle(s7,"Metadata: stop letting Google guess.");
-  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:1.5,w:4.45,h:2.1,fill:{color:C.lightGray},shadow:ms(),line:{color:"E5E7EB",width:0.5}});
-  s7.addShape(pres.shapes.OVAL,{x:0.65,y:1.65,w:0.7,h:0.7,fill:{color:C.gold},line:{color:C.gold,width:0}});
-  s7.addImage({data:await iconPng(FaTags,"#FFFFFF"),x:0.75,y:1.73,w:0.5,h:0.5});
-  s7.addText(`${data.missingDesc||0}`,{x:1.5,y:1.6,w:2.8,h:0.85,fontSize:48,bold:true,color:C.navy,fontFace:"Georgia"});
-  s7.addText("pages with no meta description",{x:0.6,y:2.5,w:4.1,h:0.3,fontSize:11,bold:true,color:C.navy,fontFace:"Calibri"});
-  s7.addText("Google writes the search snippet for you, so the firm loses control of the listing.",{x:0.6,y:2.85,w:4.1,h:0.55,fontSize:10,color:C.midGray,fontFace:"Calibri"});
-  s7.addShape(pres.shapes.RECTANGLE,{x:5.15,y:1.5,w:4.45,h:2.1,fill:{color:C.lightGray},shadow:ms(),line:{color:"E5E7EB",width:0.5}});
-  s7.addShape(pres.shapes.OVAL,{x:5.4,y:1.65,w:0.7,h:0.7,fill:{color:C.gold},line:{color:C.gold,width:0}});
-  s7.addImage({data:await iconPng(FaClipboardList,"#FFFFFF"),x:5.5,y:1.73,w:0.5,h:0.5});
-  s7.addText(`${data.titlesTooLong||0}`,{x:6.25,y:1.6,w:2.8,h:0.85,fontSize:48,bold:true,color:C.navy,fontFace:"Georgia"});
-  s7.addText("titles too long",{x:5.35,y:2.5,w:4.1,h:0.3,fontSize:11,bold:true,color:C.navy,fontFace:"Calibri"});
-  s7.addText("Titles get cut off mid-message in search results, weakening the click.",{x:5.35,y:2.85,w:4.1,h:0.55,fontSize:10,color:C.midGray,fontFace:"Calibri"});
-  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:3.82,w:9.2,h:0.9,fill:{color:C.navy},line:{color:C.navy,width:0}});
-  s7.addImage({data:await iconPng(FaMousePointer,"#"+C.gold,128),x:0.55,y:4.08,w:0.32,h:0.32});
-  s7.addText([{text:"What it costs: ",options:{bold:true,color:C.gold}},{text:"click-through on pages that already rank. Descriptions are written, titles get trimmed.",options:{color:C.white}}],{x:1.0,y:3.87,w:8.4,h:0.8,fontSize:10.5,fontFace:"Calibri"});
-  footer(s7,pb,dom);
-
-  // S8 PATTERN 3
-  const s8=pres.addSlide(); s8.background={color:C.white};
-  slabel(s8,"PATTERN 3 · CONTENT AND LINKING"); stitle(s8,"Thin pages and silent links.");
-  [{val:data.thinPages||0,label:"pages low on visible text",sub:"Light content relative to page code. Reads as thin to search engines."},{val:data.noAnchors||0,label:"links with no anchor text",sub:"Links pass no context. Mostly repeating nav, button, and icon patterns."},{val:data.weakAnchorLinks||0,label:"links with weak anchors",sub:'Anchors like "click here" that tell engines nothing about the target.'}].forEach((c,i)=>{
-    const x=0.4+i*3.1;
-    s8.addShape(pres.shapes.RECTANGLE,{x,y:1.85,w:2.9,h:2.75,fill:{color:C.lightGray},shadow:ms(),line:{color:"E5E7EB",width:0.4}});
-    s8.addShape(pres.shapes.RECTANGLE,{x,y:1.85,w:2.9,h:0.06,fill:{color:C.steel},line:{color:C.steel,width:0}});
-    s8.addText(`${c.val.toLocaleString()}`,{x:x+0.15,y:2.0,w:2.6,h:1.0,fontSize:48,bold:true,color:C.navy,fontFace:"Georgia",margin:0});
-    s8.addText(c.label,{x:x+0.15,y:3.05,w:2.6,h:0.35,fontSize:11,bold:true,color:C.navy,fontFace:"Calibri",margin:0});
-    s8.addText(c.sub,{x:x+0.15,y:3.42,w:2.6,h:0.85,fontSize:10,color:C.midGray,fontFace:"Calibri",margin:0});
-  });
-  s8.addShape(pres.shapes.RECTANGLE,{x:0.4,y:4.73,w:9.2,h:0.52,fill:{color:C.white},line:{color:C.gold,width:1.5}});
-  s8.addImage({data:await iconPng(FaBolt,"#"+C.gold,128),x:0.58,y:4.87,w:0.25,h:0.25});
-  s8.addText([{text:"The win: ",options:{bold:true,color:C.navy}},{text:"these are template patterns, so fixing the templates clears most of them in bulk.",options:{color:C.dark}}],{x:1.0,y:4.77,w:8.4,h:0.44,fontSize:10.5,fontFace:"Calibri"});
-  footer(s8,pb,dom);
-
-  // S9 CHART
-  const s9=pres.addSlide(); s9.background={color:C.white};
-  slabel(s9,"WHERE THE VOLUME IS"); stitle(s9,"Fixable issues by pages affected.");
-  s9.addText("Bar length shows scale. Color shows severity. The biggest counts are the easiest wins.",{x:0.5,y:1.42,w:9,h:0.3,fontSize:11,color:C.midGray,fontFace:"Calibri"});
-  s9.addImage({data:await barChartPng(data),x:0.5,y:1.8,w:7.0,h:3.2});
-  [{color:C.red,label:"Error"},{color:C.gold,label:"Warning"},{color:C.steel,label:"Notice"}].forEach((l,i)=>{
-    s9.addShape(pres.shapes.RECTANGLE,{x:7.8,y:2.05+i*0.38,w:0.2,h:0.2,fill:{color:l.color},line:{color:l.color,width:0}});
-    s9.addText(l.label,{x:8.08,y:2.0+i*0.38,w:1.5,h:0.3,fontSize:10,color:C.dark,fontFace:"Calibri"});
-  });
-  footer(s9,pb,dom);
-
-  // S10 ACTIONS
-  const s10=pres.addSlide(); s10.background={color:C.white};
-  slabel(s10,"PRIORITY ACTION PLAN"); stitle(s10,"Ordered by impact against effort.");
-  const acts=n.actions||[], acols=[C.red,C.gold,C.gold,C.steel,C.steel,C.midGray];
+  slbl(s7,"PRIORITY RECOMMENDATIONS"); stit(s7,"Ordered by client impact, not effort.");
+  const acts=narrative.actions||[];
+  const aColors=[C.red,C.lightBlue,C.lightBlue,C.emerald,C.emerald,C.midGray];
   acts.forEach((a,i)=>{
-    const x=0.4+(i%2)*4.85, y=1.75+Math.floor(i/2)*1.22;
-    s10.addShape(pres.shapes.RECTANGLE,{x,y,w:4.65,h:1.08,fill:{color:C.white},shadow:ms(),line:{color:"E5E7EB",width:0.5}});
-    s10.addShape(pres.shapes.RECTANGLE,{x,y,w:0.55,h:1.08,fill:{color:acols[i]||C.steel},line:{color:acols[i]||C.steel,width:0}});
-    s10.addText(a.n,{x,y,w:0.55,h:1.08,fontSize:22,bold:true,color:C.white,fontFace:"Georgia",align:"center",valign:"middle"});
-    s10.addText(a.title,{x:x+0.65,y:y+0.07,w:3.85,h:0.34,fontSize:12,bold:true,color:C.navy,fontFace:"Calibri",margin:0});
-    s10.addText(a.body, {x:x+0.65,y:y+0.4, w:3.85,h:0.3, fontSize:10,color:C.dark,fontFace:"Calibri",margin:0});
-    s10.addText(`${a.impact||""}   ${a.effort||""}`,{x:x+0.65,y:y+0.72,w:3.85,h:0.25,fontSize:9,color:C.midGray,fontFace:"Calibri",bold:true,margin:0});
+    const col=i%2,row=Math.floor(i/2),x=0.4+col*4.85,y=1.82+row*1.12;
+    s7.addShape(pres.shapes.RECTANGLE,{x,y,w:4.65,h:1.0,fill:{color:C.white},shadow:ms(),line:{color:"E2EAF0",width:0.4}});
+    s7.addShape(pres.shapes.RECTANGLE,{x,y,w:0.5,h:1.0,fill:{color:aColors[i]||C.midGray},line:{color:aColors[i]||C.midGray,width:0}});
+    s7.addText(a.n,    {x,y,w:0.5,h:1.0,fontSize:20,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle"});
+    s7.addText(a.title,{x:x+0.6,y:y+0.08,w:3.9,h:0.28,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
+    s7.addText(a.body, {x:x+0.6,y:y+0.38,w:3.9,h:0.38,fontSize:9,color:C.dark,fontFace:"Calibri",margin:0});
+    s7.addText(`Impact: ${a.impact||""}   Effort: ${a.effort||""}`,{x:x+0.6,y:y+0.78,w:3.9,h:0.18,fontSize:8,bold:true,color:C.midGray,fontFace:"Calibri",margin:0});
   });
-  footer(s10,pb,dom);
+  footer(s7,D);
 
-  // S11 TRAJECTORY
-  const s11=pres.addSlide(); s11.background={color:C.white};
-  slabel(s11,"WHAT MOVES WHEN WE FIX IT"); stitle(s11,"Headroom, then momentum.");
-  s11.addText("SITE HEALTH TRAJECTORY",{x:0.5,y:1.48,w:5,h:0.22,fontSize:9,bold:true,color:C.gold,charSpacing:3,fontFace:"Calibri"});
-  s11.addText(`${data.siteHealth||0}`,{x:0.5,y:1.75,w:1.1,h:0.65,fontSize:40,bold:true,color:C.navy,fontFace:"Georgia"});
-  s11.addImage({data:await iconPng(FaArrowRight,"#"+C.navy,128),x:1.78,y:1.95,w:0.38,h:0.28});
-  s11.addText("90+",{x:2.35,y:1.7,w:1.5,h:0.65,fontSize:40,bold:true,color:C.green,fontFace:"Georgia"});
-  s11.addText("today",{x:0.5,y:2.45,w:1.1,h:0.22,fontSize:9,color:C.midGray,fontFace:"Calibri"});
-  s11.addText("target as warnings clear",{x:2.35,y:2.45,w:2.5,h:0.22,fontSize:9,color:C.midGray,fontFace:"Calibri"});
-  const bw=4.5, pct=(data.siteHealth||0)/100;
-  s11.addShape(pres.shapes.RECTANGLE,{x:0.5,y:2.78,w:bw,h:0.18,fill:{color:"E5E7EB"},line:{color:"E5E7EB",width:0}});
-  s11.addShape(pres.shapes.RECTANGLE,{x:0.5,y:2.78,w:bw*pct,h:0.18,fill:{color:C.navy},line:{color:C.navy,width:0}});
-  s11.addShape(pres.shapes.RECTANGLE,{x:0.5+bw*pct,y:2.78,w:bw*0.1,h:0.18,fill:{color:C.green},line:{color:C.green,width:0}});
-  [{title:"AI Search lifts first",body:`The schema fix targets exactly what the ${data.aiReadiness||0} score measures.`},{title:"CTR climbs on current ranks",body:"Metadata work earns clicks without new ranking pages."},{title:"Hundreds cleared per change",body:"Template fixes resolve issues in bulk, not one by one."},{title:"Health trends to 90+",body:"As warnings close, the headline score follows."}].forEach((b,i)=>{
-    const x=0.4+(i%2)*4.85, y=3.15+Math.floor(i/2)*1.0;
-    s11.addShape(pres.shapes.RECTANGLE,{x,y,w:4.65,h:0.85,fill:{color:C.lightGray},shadow:ms(),line:{color:"E5E7EB",width:0.3}});
-    s11.addShape(pres.shapes.OVAL,{x:x+0.15,y:y+0.27,w:0.3,h:0.3,fill:{color:C.gold},line:{color:C.gold,width:0}});
-    s11.addText(b.title,{x:x+0.58,y:y+0.08,w:3.9,h:0.3,fontSize:11,bold:true,color:C.navy,fontFace:"Calibri",margin:0});
-    s11.addText(b.body, {x:x+0.58,y:y+0.42,w:3.9,h:0.35,fontSize:10,color:C.dark,fontFace:"Calibri",margin:0});
+  // S8 SEQUENCE
+  const s8=pres.addSlide(); s8.background={color:C.darkBlue};
+  s8.addShape(pres.shapes.RECTANGLE,{x:0,y:0,w:0.22,h:5.625,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
+  s8.addShape(pres.shapes.RECTANGLE,{x:0,y:5.1,w:10,h:0.525,fill:{color:"0C1E3A"},line:{color:"0C1E3A",width:0}});
+  const fi=await iconPng(FaFlag,"#"+C.lightBlue,256);
+  s8.addImage({data:fi,x:0.5,y:0.55,w:0.5,h:0.5});
+  s8.addText("Recommended Sequence",{x:0.5,y:1.15,w:9,h:0.6,fontSize:34,bold:true,color:C.white,fontFace:"Calibri"});
+  s8.addText("Quick wins first. Build momentum. Every step moves the needle for new client inquiries.",{x:0.5,y:1.8,w:9,h:0.35,fontSize:12,color:"7ABCD4",fontFace:"Calibri",italic:true});
+  const seq=narrative.sequence||[];
+  const seqColors=[C.lightBlue,C.lightBlue,C.emerald,C.banana];
+  seq.forEach((t,i)=>{
+    const y=2.3+i*0.72;
+    s8.addShape(pres.shapes.RECTANGLE,{x:0.45,y:y+0.52,w:9.1,h:0.01,fill:{color:"1A3558"},line:{color:"1A3558",width:0}});
+    s8.addShape(pres.shapes.RECTANGLE,{x:0.45,y:y+0.1,w:0.06,h:0.35,fill:{color:seqColors[i]||C.lightBlue},line:{color:seqColors[i]||C.lightBlue,width:0}});
+    s8.addText(t.week,{x:0.65,y,w:1.6,h:0.45,fontSize:12,bold:true,color:seqColors[i]||C.lightBlue,fontFace:"Calibri"});
+    s8.addText(t.body,{x:2.4, y,w:7.1,h:0.45,fontSize:12,color:C.white,fontFace:"Calibri"});
   });
-  footer(s11,pb,dom);
-
-  // S12 SEQUENCE
-  const s12=pres.addSlide(); s12.background={color:C.navy};
-  s12.addShape(pres.shapes.RECTANGLE,{x:0,y:0,w:0.18,h:5.625,fill:{color:C.gold},line:{color:C.gold,width:0}});
-  s12.addImage({data:await iconPng(FaFlag,"#"+C.gold),x:0.5,y:0.55,w:0.55,h:0.55});
-  s12.addText("Recommended sequence",{x:0.5,y:1.22,w:9,h:0.65,fontSize:36,bold:true,color:C.white,fontFace:"Georgia"});
-  (n.sequence||[]).forEach((t,i)=>{
-    const y=2.05+i*0.72;
-    s12.addShape(pres.shapes.RECTANGLE,{x:0.45,y:y+0.28,w:8.8,h:0.01,fill:{color:"2A3F5F"},line:{color:"2A3F5F",width:0}});
-    s12.addText(t.week,{x:0.5,y,w:1.8,h:0.5,fontSize:13,bold:true,color:C.gold,fontFace:"Calibri"});
-    s12.addText(t.body,{x:2.5,y,w:6.8,h:0.5,fontSize:13,color:C.white,fontFace:"Calibri"});
-  });
-  s12.addText("Full affected-URL lists are delivered in the written audit report.",{x:0.5,y:5.1,w:9,h:0.3,fontSize:10,color:"4A6A85",fontFace:"Calibri",italic:true});
+  s8.addText(`${D.preparedBy}   ·   ${D.domain}   ·   ${D.date||""}`,{x:0.5,y:5.15,w:9,h:0.25,fontSize:8,color:"3A6080",fontFace:"Calibri"});
 
   return await pres.write({outputType:"base64"});
 }
 
-// ── ROUTES ───────────────────────────────────────────────────
-app.get("/", (req,res) => res.sendFile(path.join(__dirname,"public","index.html")));
+// ── ROUTES ────────────────────────────────────────────────────
 
-app.post("/generate", async (req,res) => {
+// Main generate endpoint — accepts multipart for Majestic CSV
+app.post("/generate", upload.single("majesticCsv"), async (req,res) => {
   try {
-    const { data } = req.body;
-    if (!data) return res.status(400).json({error:"Missing data"});
+    const data = JSON.parse(req.body.data || "{}");
+
+    // Parse Majestic CSV if uploaded
+    if (req.file) {
+      const majestic = parseMajesticCsv(req.file.buffer);
+      Object.assign(data, majestic);
+    }
+
+    // Auto-fetch PageSpeed
+    if (data.domain && !data.psPerformance) {
+      const ps = await fetchPageSpeed(data.domain);
+      Object.assign(data, ps);
+    }
+
+    // Auto-fetch SEMrush competitors
+    if (data.domain && SEMRUSH_KEY) {
+      const comps = await semrushCompetitors(data.domain);
+      data.competitors = comps;
+    }
+
+    // Auto-fetch BrightLocal citation data
+    if (data.domain && BRIGHTLOCAL_KEY && !data.citationsFound) {
+      const bl = await brightlocalCitationAudit(data.domain, data.clientName, data.location);
+      Object.assign(data, bl);
+    }
+
+    // Get Claude narrative
     const narrative = await getNarrative(data);
+
+    // Build deck
     const pptxBase64 = await buildPptx(data, narrative);
-    const date = data.date || new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"});
-    const fileName = `SEO Audit — ${data.clientName} — ${date}.pptx`;
+    const date       = data.date || new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"});
+    const fileName   = `SEO Audit — ${data.clientName} — ${date}.pptx`;
+
     res.json({ pptxBase64, fileName });
+
   } catch(err) {
     console.error(err);
-    res.status(500).json({error: err.message});
+    res.status(500).json({ error: err.message });
   }
 });
 
+app.get("/", (req,res) => res.sendFile(path.join(__dirname,"public","index.html")));
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Listening on port ${PORT}`));
+app.listen(PORT, () => console.log(`SEO Audit API v3 running on port ${PORT}`));
