@@ -115,49 +115,75 @@ async function semrushSiteAudit(domain) {
   return {};
 }
 
-// BrightLocal citation audit
+// BrightLocal Citation Tracker — uses existing report in account
 async function brightlocalCitationAudit(domain, businessName, location) {
   try {
-    // BrightLocal API v2 — citation burst
-    const createRes = await fetch("https://tools.brightlocal.com/seo-tools/api/v2/lsrc/add", {
+    const BASE    = "https://tools.brightlocal.com/seo-tools/api";
+    const key     = BRIGHTLOCAL_KEY;
+    // Known report ID for killianlaw.com — from BrightLocal dashboard URL
+    const REPORT_ID  = process.env.BRIGHTLOCAL_REPORT_ID  || "2422640";
+    const LOCATION_ID = process.env.BRIGHTLOCAL_LOCATION_ID || "4071942";
+
+    // Step 1: Trigger a fresh run
+    console.log("BrightLocal: triggering report run for report", REPORT_ID);
+    const runRes  = await fetch(`${BASE}/v2/ct/run`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        "api-key":         BRIGHTLOCAL_KEY,
-        "business-name":   businessName || domain,
-        "website-address": `https://${domain}`,
-        "country":         "USA",
-        "city":            location || "",
-        "postcode":        "",
-      })
+      body: new URLSearchParams({ "api-key": key, "report-id": REPORT_ID })
     });
-    const createText = await createRes.json();
-    console.log("BrightLocal create response:", JSON.stringify(createText).slice(0, 300));
-    const createData = createText;
-    if (!createData?.response?.[`report-id`]) {
-      console.log("BrightLocal: no report-id returned. Full response:", JSON.stringify(createData));
-      return {};
-    }
+    const runData = await runRes.json();
+    console.log("BrightLocal run response:", JSON.stringify(runData).slice(0, 200));
 
-    const reportId = createData.response["report-id"];
-
-    // Poll for results (max 90s)
-    for (let i = 0; i < 18; i++) {
-      await new Promise(r => setTimeout(r, 5000));
-      const pollRes  = await fetch(`https://tools.brightlocal.com/seo-tools/api/v2/lsrc/get?api-key=${BRIGHTLOCAL_KEY}&report-id=${reportId}`);
+    // Step 2: Poll for completion (max 90s, every 10s)
+    for (let i = 0; i < 9; i++) {
+      await new Promise(r => setTimeout(r, 10000));
+      const pollRes  = await fetch(`${BASE}/v2/ct/get?api-key=${key}&report-id=${REPORT_ID}`);
       const pollData = await pollRes.json();
-      if (pollData?.response?.["report-status"] === "Complete") {
-        const r = pollData.response;
+      console.log(`BrightLocal poll ${i+1}:`, JSON.stringify(pollData).slice(0, 200));
+
+      const report = pollData?.response || pollData?.report || pollData;
+      const status = report?.status || report?.report_status || "";
+
+      if (status === "complete" || status === "Complete") {
+        // Step 3: Get results
+        const resultsRes  = await fetch(`${BASE}/v2/ct/get-results?api-key=${key}&report-id=${REPORT_ID}`);
+        const resultsData = await resultsRes.json();
+        console.log("BrightLocal results:", JSON.stringify(resultsData).slice(0, 300));
+
+        const r = resultsData?.response?.results || resultsData?.results || {};
+        const active   = r?.active?.length   || 0;
+        const pending  = r?.pending?.length  || 0;
+        const possible = r?.possible?.length || 0;
+
+        // NAP consistency = active / (active + pending + possible) * 100
+        const total = active + pending + possible;
+        const napConsistency = total > 0 ? Math.round((active / total) * 100) : 0;
+
         return {
-          citationsFound:  r["citations-found"]    || 0,
-          napConsistency:  r["nap-consistency"]     || 0,
-          activeListings:  r["active-listings"]     || 0,
-          missingListings: r["missing-listings"]    || 0,
+          citationsFound:  active,
+          napConsistency,
+          activeListings:  active,
+          missingListings: pending + possible,
         };
       }
     }
+
+    // If not complete after 90s, return last known data from the report
+    console.log("BrightLocal: timed out waiting for report — fetching last results");
+    const lastRes  = await fetch(`${BASE}/v2/ct/get-results?api-key=${key}&report-id=${REPORT_ID}`);
+    const lastData = await lastRes.json();
+    const r = lastData?.response?.results || lastData?.results || {};
+    const active = r?.active?.length || 0;
+    const total  = active + (r?.pending?.length||0) + (r?.possible?.length||0);
+    return {
+      citationsFound: active,
+      napConsistency: total > 0 ? Math.round((active / total) * 100) : 0,
+    };
+
+  } catch(e) {
+    console.error("BrightLocal error:", e.message);
     return {};
-  } catch(e) { return {}; }
+  }
 }
 
 // SEMrush Site Audit — pulls full crawl data from existing campaign
@@ -610,13 +636,15 @@ async function buildPptx(data, narrative) {
 // GET /debug — shows env config status (no secret values)
 app.get("/debug", (req, res) => {
   res.json({
-    semrush_key_set:     !!SEMRUSH_KEY,
-    semrush_key_prefix:  SEMRUSH_KEY ? SEMRUSH_KEY.slice(0,6)+"..." : "NOT SET",
-    semrush_project:     SEMRUSH_PROJECT,
-    brightlocal_key_set: !!BRIGHTLOCAL_KEY,
-    anthropic_key_set:   !!ANTHROPIC_KEY,
-    pagespeed_key_set:   !!PAGESPEED_KEY,
-    node_version:        process.version,
+    semrush_key_set:        !!SEMRUSH_KEY,
+    semrush_key_prefix:     SEMRUSH_KEY ? SEMRUSH_KEY.slice(0,6)+"..." : "NOT SET",
+    semrush_project:        SEMRUSH_PROJECT,
+    brightlocal_key_set:    !!BRIGHTLOCAL_KEY,
+    brightlocal_report_id:  process.env.BRIGHTLOCAL_REPORT_ID  || "2422640 (default)",
+    brightlocal_location_id:process.env.BRIGHTLOCAL_LOCATION_ID|| "4071942 (default)",
+    anthropic_key_set:      !!ANTHROPIC_KEY,
+    pagespeed_key_set:      !!PAGESPEED_KEY,
+    node_version:           process.version,
   });
 });
 
