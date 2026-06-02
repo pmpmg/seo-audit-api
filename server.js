@@ -15,9 +15,10 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // ── ENV ──────────────────────────────────────────────────────
 const SEMRUSH_KEY     = process.env.SEMRUSH_API_KEY     || "";
-const SEMRUSH_PROJECT = process.env.SEMRUSH_PROJECT_ID  || "6093881";
+const SEMRUSH_PROJECT = process.env.SEMRUSH_PROJECT_ID  || "18143167"; // Fixed: project ID from URL path, not fid param
 const BRIGHTLOCAL_KEY = process.env.BRIGHTLOCAL_API_KEY || "";
 const ANTHROPIC_KEY   = process.env.ANTHROPIC_API_KEY   || "";
+const PAGESPEED_KEY   = process.env.PAGESPEED_API_KEY   || ""; // Optional — avoids rate limits
 
 // ── JOB QUEUE ────────────────────────────────────────────────
 const jobs = new Map(); // jobId -> { status, result, error, createdAt }
@@ -161,15 +162,31 @@ async function semrushSiteAuditData(projectId) {
     const key = SEMRUSH_KEY;
 
     // Step 1: Get campaign info + latest snapshot ID
-    const infoUrl = `https://api.semrush.com/reports/v1/projects/${projectId}/siteaudit/info?key=${key}`;
-    console.log("SEMrush info URL:", infoUrl);
-    const infoRes  = await fetchWithTimeout(infoUrl, 15000);
-    const infoText = await infoRes.text();
-    console.log("SEMrush info response:", infoText.slice(0, 200));
-
+    // Try both known project IDs (path ID and fid param)
+    const idsToTry = [...new Set([projectId, "18143167", "6093881"])];
     let infoJson = {};
-    try { infoJson = JSON.parse(infoText); } catch(e) {
-      console.error("SEMrush info parse error:", e.message);
+    let workingId = null;
+
+    for (const pid of idsToTry) {
+      const infoUrl = `https://api.semrush.com/reports/v1/projects/${pid}/siteaudit/info?key=${key}`;
+      console.log("SEMrush trying project ID:", pid);
+      try {
+        const infoRes  = await fetchWithTimeout(infoUrl, 15000);
+        const infoText = await infoRes.text();
+        console.log(`SEMrush response for ${pid}:`, infoText.slice(0, 300));
+        const parsed = JSON.parse(infoText);
+        if (parsed?.data || parsed?.last_snapshot_id || parsed?.snapshot_id) {
+          infoJson  = parsed;
+          workingId = pid;
+          break;
+        }
+      } catch(e) {
+        console.log(`SEMrush project ${pid} failed:`, e.message);
+      }
+    }
+
+    if (!workingId) {
+      console.log("SEMrush: no valid project ID found. Tried:", idsToTry);
       return {};
     }
 
@@ -178,13 +195,13 @@ async function semrushSiteAuditData(projectId) {
                     || infoJson?.snapshot_id;
 
     if (!snapshotId) {
-      console.log("No snapshot ID found in SEMrush response");
+      console.log("SEMrush: no snapshot ID in response:", JSON.stringify(infoJson).slice(0, 300));
       return {};
     }
-    console.log("Using snapshot ID:", snapshotId);
+    console.log("SEMrush: using project", workingId, "snapshot", snapshotId);
 
     // Step 2: Get audit summary for this snapshot
-    const summaryUrl = `https://api.semrush.com/reports/v1/projects/${projectId}/siteaudit/snapshots/${snapshotId}/summary?key=${key}`;
+    const summaryUrl = `https://api.semrush.com/reports/v1/projects/${workingId}/siteaudit/snapshots/${snapshotId}/summary?key=${key}`;
     const summaryRes  = await fetchWithTimeout(summaryUrl, 15000);
     const summaryText = await summaryRes.text();
     console.log("SEMrush summary:", summaryText.slice(0, 300));
@@ -193,7 +210,7 @@ async function semrushSiteAuditData(projectId) {
     try { s = JSON.parse(summaryText)?.data || JSON.parse(summaryText) || {}; } catch(e) {}
 
     // Step 3: Get issues list
-    const issuesUrl = `https://api.semrush.com/reports/v1/projects/${projectId}/siteaudit/snapshots/${snapshotId}/issues?key=${key}&limit=100`;
+    const issuesUrl = `https://api.semrush.com/reports/v1/projects/${workingId}/siteaudit/snapshots/${snapshotId}/issues?key=${key}&limit=100`;
     const issuesRes  = await fetchWithTimeout(issuesUrl, 15000);
     const issuesText = await issuesRes.text();
 
@@ -246,16 +263,19 @@ async function fetchWithTimeout(url, ms=12000) {
 
 async function fetchPageSpeed(domain) {
   try {
-    const base = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
-    const url  = `https://${domain}`;
+    const base   = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
+    const url    = `https://${domain}`;
+    const keyStr = PAGESPEED_KEY ? `&key=${PAGESPEED_KEY}` : "";
     let mob = {}, dsk = {};
     try {
-      const r = await fetchWithTimeout(`${base}?url=${encodeURIComponent(url)}&strategy=mobile`, 12000);
+      const r = await fetchWithTimeout(`${base}?url=${encodeURIComponent(url)}&strategy=mobile${keyStr}`, 20000);
       mob = await r.json();
+      if (mob.error) { console.log("PageSpeed mobile API error:", mob.error.message); mob = {}; }
     } catch(e) { console.log("PageSpeed mobile failed:", e.message); }
     try {
-      const r = await fetchWithTimeout(`${base}?url=${encodeURIComponent(url)}&strategy=desktop`, 12000);
+      const r = await fetchWithTimeout(`${base}?url=${encodeURIComponent(url)}&strategy=desktop${keyStr}`, 20000);
       dsk = await r.json();
+      if (dsk.error) { console.log("PageSpeed desktop API error:", dsk.error.message); dsk = {}; }
     } catch(e) { console.log("PageSpeed desktop failed:", e.message); }
 
     const getMetric = (data, id) => data?.lighthouseResult?.audits?.[id]?.displayValue || "—";
@@ -605,6 +625,19 @@ async function buildPptx(data, narrative) {
 }
 
 // ── ROUTES ────────────────────────────────────────────────────
+
+// GET /debug — shows env config status (no secret values)
+app.get("/debug", (req, res) => {
+  res.json({
+    semrush_key_set:     !!SEMRUSH_KEY,
+    semrush_key_prefix:  SEMRUSH_KEY ? SEMRUSH_KEY.slice(0,6)+"..." : "NOT SET",
+    semrush_project:     SEMRUSH_PROJECT,
+    brightlocal_key_set: !!BRIGHTLOCAL_KEY,
+    anthropic_key_set:   !!ANTHROPIC_KEY,
+    pagespeed_key_set:   !!PAGESPEED_KEY,
+    node_version:        process.version,
+  });
+});
 
 // POST /generate — accepts multipart, starts background job, returns jobId immediately
 app.post("/generate", upload.fields([
