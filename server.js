@@ -385,55 +385,22 @@ AUDIT DATA: ${JSON.stringify(data)}`;
 
 // ── PPTX HELPERS ─────────────────────────────────────────────
 // Pure PPTX gauge — draws donut using arc shapes
-function drawGauge(pres, slide, x, y, w, h, score, label) {
-  const color  = score >= 90 ? C.emerald : score >= 50 ? C.lightBlue : C.red;
-  const badge  = score >= 90 ? "EXCELLENT" : score >= 50 ? "GOOD" : "NEEDS WORK";
-  const cx = x + w/2, cy = y + h/2 - 0.1;
-  const r  = Math.min(w, h) * 0.40;
-
-  // Track ring (light gray background circle)
-  slide.addShape(pres.shapes.OVAL, {
-    x: cx-r, y: cy-r, w: r*2, h: r*2,
-    line: { color: "E2EAF0", width: 10 }, fill: { color: C.white }
-  });
-
-  // Colored arc — simulate with a thicker partial oval overlay
-  // pptxgenjs can't draw partial arcs, so we use a layered approach:
-  // draw a colored full ring, then cover the "empty" portion with white arcs
-  const pct = Math.max(0, Math.min(100, score)) / 100;
-
-  // Colored ring (full, then masked by white wedge for empty portion)
-  slide.addShape(pres.shapes.OVAL, {
-    x: cx-r, y: cy-r, w: r*2, h: r*2,
-    line: { color, width: 10 }, fill: { color: C.white }
-  });
-
-  // Score number
-  slide.addText(`${score}`, {
-    x: cx - r, y: cy - 0.30, w: r*2, h: 0.52,
-    fontSize: 30, bold: true, color, fontFace: "Calibri", align: "center", valign: "middle", margin: 0
-  });
-  slide.addText("/100", {
-    x: cx - r, y: cy + 0.24, w: r*2, h: 0.26,
-    fontSize: 10, color: C.midGray, fontFace: "Calibri", align: "center", margin: 0
-  });
-
-  // Label below gauge
-  slide.addText(label, {
-    x: cx - r, y: cy + r + 0.06, w: r*2, h: 0.26,
-    fontSize: 12, bold: true, color: C.darkBlue, fontFace: "Calibri", align: "center", margin: 0
-  });
-
-  // Colored badge pill below label
-  const bw = 0.9, bh = 0.22;
-  slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
-    x: cx - bw/2, y: cy + r + 0.36, w: bw, h: bh,
-    fill: { color }, line: { color, width: 0 }, rectRadius: 0.05
-  });
-  slide.addText(badge, {
-    x: cx - bw/2, y: cy + r + 0.36, w: bw, h: bh,
-    fontSize: 8, bold: true, color: C.white, fontFace: "Calibri", align: "center", valign: "middle", margin: 0
-  });
+async function drawGauge(pres, slide, x, y, w, h, score, label) {
+  try {
+    const pngBuf  = await renderGaugePng(score, label);
+    const b64     = pngBuf.toString("base64");
+    slide.addImage({ data: `image/png;base64,${b64}`, x, y, w, h });
+  } catch(e) {
+    // Fallback if canvas not available
+    console.error("Gauge render failed, using fallback:", e.message);
+    const color = score >= 90 ? C.emerald : score >= 50 ? C.lightBlue : C.red;
+    const cx = x + w/2, cy = y + h/2;
+    slide.addShape(pres.shapes.OVAL, { x: cx-0.9, y: cy-0.9, w:1.8, h:1.8, line:{color:"E2EAF0",width:8}, fill:{color:C.white} });
+    slide.addShape(pres.shapes.OVAL, { x: cx-0.9, y: cy-0.9, w:1.8, h:1.8, line:{color,width:8}, fill:{color:C.white} });
+    slide.addText(`${score}`, { x: cx-0.9, y: cy-0.28, w:1.8, h:0.5, fontSize:28, bold:true, color, fontFace:"Calibri", align:"center", margin:0 });
+    slide.addText("/100", { x: cx-0.9, y: cy+0.24, w:1.8, h:0.24, fontSize:10, color:C.midGray, fontFace:"Calibri", align:"center", margin:0 });
+    slide.addText(label, { x, y: y+h-0.3, w, h:0.28, fontSize:11, bold:true, color:C.darkBlue, fontFace:"Calibri", align:"center" });
+  }
 }
 
 // Simple icon substitutes using colored text/shapes
@@ -457,6 +424,87 @@ function kpi(pres,s,x,y,w,h,val,lbl,sub,color){
   s.addText(val,{x:x+0.18,y:y+0.18,w:w-0.3,h:0.72,fontSize:36,bold:true,color,fontFace:"Calibri",margin:0});
   s.addText(lbl,{x:x+0.18,y:y+0.94,w:w-0.3,h:0.28,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
   if(sub)s.addText(sub,{x:x+0.18,y:y+1.24,w:w-0.3,h:0.5,fontSize:9,color:C.midGray,fontFace:"Calibri",margin:0});
+}
+
+// ── GAUGE IMAGE GENERATOR ─────────────────────────────────────
+async function renderGaugePng(score, label) {
+  const { createCanvas } = require("canvas");
+  const SIZE = 300;
+  const cx = SIZE / 2, cy = SIZE / 2 - 10;
+  const R = 108, SW = 22;
+  const canvas = createCanvas(SIZE, SIZE);
+  const ctx = canvas.getContext("2d");
+
+  const color = score >= 90 ? "#00684F" : score >= 50 ? "#009ABF" : "#C0392B";
+  const badge = score >= 90 ? "EXCELLENT" : score >= 50 ? "GOOD" : "NEEDS WORK";
+
+  ctx.clearRect(0, 0, SIZE, SIZE);
+
+  // White background (PPT images need a bg)
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillRect(0, 0, SIZE, SIZE);
+
+  const startAngle = (135 * Math.PI) / 180;
+  const fullSweep  = (270 * Math.PI) / 180;
+  const endAngle   = startAngle + fullSweep;
+  const scoreAngle = startAngle + (fullSweep * Math.max(0, Math.min(100, score))) / 100;
+
+  // Background track
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, startAngle, endAngle);
+  ctx.strokeStyle = "#E2EAF0";
+  ctx.lineWidth = SW;
+  ctx.lineCap = "round";
+  ctx.stroke();
+
+  // Colored arc
+  if (score > 0) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, startAngle, scoreAngle);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = SW;
+    ctx.lineCap = "round";
+    ctx.stroke();
+  }
+
+  // Score number
+  ctx.fillStyle = color;
+  ctx.font = "bold 72px Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(score), cx, cy - 8);
+
+  // /100
+  ctx.fillStyle = "#6B7A8D";
+  ctx.font = "24px Arial, sans-serif";
+  ctx.fillText("/100", cx, cy + 44);
+
+  // Label
+  ctx.fillStyle = "#12284C";
+  ctx.font = "bold 26px Arial, sans-serif";
+  ctx.fillText(label, cx, cy + R + 36);
+
+  // Badge pill
+  const bw = 150, bh = 34, br = 17;
+  const bx = cx - bw / 2, by = cy + R + 60;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(bx + br, by);
+  ctx.lineTo(bx + bw - br, by);
+  ctx.arcTo(bx + bw, by, bx + bw, by + br, br);
+  ctx.lineTo(bx + bw, by + bh - br);
+  ctx.arcTo(bx + bw, by + bh, bx + bw - br, by + bh, br);
+  ctx.lineTo(bx + br, by + bh);
+  ctx.arcTo(bx, by + bh, bx, by + bh - br, br);
+  ctx.lineTo(bx, by + br);
+  ctx.arcTo(bx, by, bx + br, by, br);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "bold 18px Arial, sans-serif";
+  ctx.fillText(badge, cx, by + bh / 2);
+
+  return canvas.toBuffer("image/png");
 }
 
 // ── BUILD PPTX ────────────────────────────────────────────────
@@ -540,8 +588,8 @@ async function buildPptx(data, narrative) {
   slbl(s5,"SPEED & CORE WEB VITALS · Google PageSpeed Insights");
   stit(s5,"Slow pages lose clients before they read a word.");
   s5.addText("Google uses page speed as a direct ranking factor. For law firms, every second of delay costs consultations.",{x:0.5,y:1.38,w:9,h:0.35,fontSize:11,color:C.dark,fontFace:"Calibri"});
-  drawGauge(pres,s5, 0.4,1.8,2.3,2.5, D.psMobile||D.psPerformance||0, "Mobile");
-  drawGauge(pres,s5, 2.9,1.8,2.3,2.5, D.psDesktop||0,                    "Desktop");
+  await drawGauge(pres,s5, 0.4,1.8,2.3,2.5, D.psMobile||D.psPerformance||0, "Mobile");
+  await drawGauge(pres,s5, 2.9,1.8,2.3,2.5, D.psDesktop||0, "Desktop");
   s5.addText("Most law firm searches happen on mobile — this score must be above 90.",{x:0.5,y:4.45,w:4.5,h:0.4,fontSize:9,color:C.midGray,fontFace:"Calibri",italic:true,align:"center"});
   const vitals=[
     {label:"First Contentful Paint",   value:D.psFCP||"—", good:"< 1.8s"},
