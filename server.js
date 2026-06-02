@@ -383,6 +383,74 @@ AUDIT DATA: ${JSON.stringify(data)}`;
 
 // parseMajesticCsv — imported from ./parse_majestic
 
+
+// SEMrush organic keywords — top 100 ranking URLs + keywords for content audit
+async function semrushOrganicKeywords(domain) {
+  try {
+    const url = `https://api.semrush.com/?type=domain_organic&key=${SEMRUSH_KEY}&export_columns=Ph,Po,Nq,Ur&domain=${domain}&database=us&display_limit=100&display_sort=nq_desc`;
+    const res  = await fetchWithTimeout(url);
+    const text = await res.text();
+    const rows = text.trim().split("\n").slice(1).map(r => {
+      const [keyword, position, volume, url] = r.split(";");
+      return {
+        keyword: (keyword||"").trim(),
+        position: parseInt(position)||99,
+        volume:   parseInt(volume)||0,
+        url:      (url||"").trim().toLowerCase()
+      };
+    }).filter(r => r.keyword);
+
+    // Practice area taxonomy for law firms
+    const TOPICS = [
+      { label:"Personal Injury",   terms:["personal injury","car accident","auto accident","slip and fall","wrongful death","motorcycle accident","truck accident"] },
+      { label:"Criminal Defense",  terms:["criminal defense","dui","dwi","felony","misdemeanor","drug charge","assault","criminal lawyer"] },
+      { label:"Family Law",        terms:["divorce","family law","child custody","alimony","child support","adoption","domestic violence"] },
+      { label:"Estate Planning",   terms:["estate planning","will","trust","probate","power of attorney","elder law"] },
+      { label:"Business Law",      terms:["business law","contract","llc","corporate","employment","commercial litigation"] },
+      { label:"Real Estate",       terms:["real estate","property","landlord","tenant","foreclosure","title"] },
+      { label:"Immigration",       terms:["immigration","visa","green card","citizenship","deportation","asylum"] },
+      { label:"Workers Comp",      terms:["workers compensation","workers comp","workplace injury","work accident"] },
+      { label:"Social Security",   terms:["social security","disability","ssdi","ssi"] },
+      { label:"Bankruptcy",        terms:["bankruptcy","chapter 7","chapter 13","debt relief"] },
+    ];
+
+    // Score each topic: 2=strong (top10), 1=weak (11-20), 0=missing
+    const topicCoverage = TOPICS.map(t => {
+      const matches = rows.filter(r =>
+        t.terms.some(term => r.keyword.includes(term) || r.url.includes(term.replace(/ /g,"-")))
+      );
+      const top10  = matches.filter(r => r.position <= 10).length;
+      const top20  = matches.filter(r => r.position <= 20).length;
+      const score  = top10 >= 2 ? 2 : top10 >= 1 ? 2 : top20 >= 1 ? 1 : 0;
+      return { label: t.label, score, keywords: matches.length };
+    });
+
+    // Page type analysis from URLs
+    const US_STATES = ["alabama","alaska","arizona","arkansas","california","colorado","connecticut","delaware","florida","georgia","hawaii","idaho","illinois","indiana","iowa","kansas","kentucky","louisiana","maine","maryland","massachusetts","michigan","minnesota","mississippi","missouri","montana","nebraska","nevada","new-hampshire","new-jersey","new-mexico","new-york","north-carolina","north-dakota","ohio","oklahoma","oregon","pennsylvania","rhode-island","south-carolina","south-dakota","tennessee","texas","utah","vermont","virginia","washington","west-virginia","wisconsin","wyoming"];
+    const LOCATION_TERMS = ["location","locations","office","offices","city","cities","near","serving",...US_STATES];
+    const SERVICE_TERMS  = ["service","services","practice","practice-area","attorney","lawyer","law","legal"];
+
+    const uniqueUrls = [...new Set(rows.map(r => r.url))];
+    const urlKeywordCount = {};
+    rows.forEach(r => { urlKeywordCount[r.url] = (urlKeywordCount[r.url]||0) + 1; });
+
+    const locationPages = uniqueUrls.filter(u => LOCATION_TERMS.some(t => u.includes(t))).length;
+    const servicePages  = uniqueUrls.filter(u => SERVICE_TERMS.some(t => u.includes(t)) && !LOCATION_TERMS.some(t => u.includes(t))).length;
+    const thinPages     = uniqueUrls.filter(u => urlKeywordCount[u] <= 2).length;
+    const strongPages   = uniqueUrls.filter(u => urlKeywordCount[u] >= 5).length;
+
+    // Position buckets
+    const top3  = rows.filter(r => r.position <= 3).length;
+    const top10 = rows.filter(r => r.position <= 10).length;
+    const top20 = rows.filter(r => r.position <= 20).length;
+
+    return { topicCoverage, locationPages, servicePages, thinPages, strongPages, top3, top10, top20, totalKeywords: rows.length };
+  } catch(e) {
+    console.error("semrushOrganicKeywords error:", e.message);
+    return null;
+  }
+}
+
 // ── PPTX HELPERS ─────────────────────────────────────────────
 // Pure PPTX gauge — draws donut using arc shapes
 async function drawGauge(pres, slide, x, y, w, h, score, label) {
@@ -674,43 +742,109 @@ async function buildPptx(data, narrative) {
   s6.addText("Below benchmark",{x:5.62,y:5.21,w:2.0,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri"});
   footer(s6,D);
 
-  // S7 RECOMMENDATIONS
+  // S7 CONTENT AUTHORITY
   const s7=pres.addSlide(); s7.background={color:C.white};
-  slbl(s7,"PRIORITY RECOMMENDATIONS"); stit(s7,"Ordered by client impact, not effort.");
-  const acts=(narrative.actions||[]).slice(0,6); // cap at 6 to fit slide
+  slbl(s7,"CONTENT AUTHORITY · SEMrush Organic Research");
+  stit(s7,"How deep is the content? Where are the gaps?");
+  const OA = D.organicAudit || {};
+  const topics = OA.topicCoverage || [];
+
+  // LEFT PANEL: Organic snapshot
+  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:1.72,w:2.6,h:3.6,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+  s7.addText("KEYWORD RANKINGS",{x:0.5,y:1.82,w:2.4,h:0.22,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
+  const snapRows=[
+    {label:"Top 3 positions",   val:OA.top3||0,           color:C.emerald},
+    {label:"Top 10 positions",  val:OA.top10||0,          color:C.lightBlue},
+    {label:"Top 20 positions",  val:OA.top20||0,          color:C.midGray},
+    {label:"Keywords tracked",  val:OA.totalKeywords||0,  color:C.darkBlue},
+  ];
+  snapRows.forEach((r,i)=>{
+    const y=2.18+i*0.58;
+    s7.addShape(pres.shapes.RECTANGLE,{x:0.5,y,w:2.4,h:0.48,fill:{color:C.white},line:{color:"E2EAF0",width:0.3}});
+    s7.addText(String(r.val),{x:0.56,y:y+0.04,w:0.9,h:0.4,fontSize:20,bold:true,color:r.color,fontFace:"Calibri",valign:"middle",margin:0});
+    s7.addText(r.label,{x:1.5,y:y+0.04,w:1.3,h:0.4,fontSize:9,color:C.midGray,fontFace:"Calibri",valign:"middle",margin:0});
+  });
+  // Page type chips
+  s7.addText("PAGE BREAKDOWN",{x:0.5,y:4.62,w:2.4,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
+  [{label:"Location pages",val:OA.locationPages||0},{label:"Service pages",val:OA.servicePages||0},
+   {label:"Strong (5+ kw)",val:OA.strongPages||0},{label:"Thin (1-2 kw)",val:OA.thinPages||0}].forEach((r,i)=>{
+    const px=0.5+(i%2)*1.2, py=4.86+Math.floor(i/2)*0.5;
+    s7.addShape(pres.shapes.RECTANGLE,{x:px,y:py,w:1.1,h:0.4,fill:{color:C.white},line:{color:"E2EAF0",width:0.3}});
+    s7.addText(String(r.val),{x:px,y:py+0.01,w:1.1,h:0.22,fontSize:13,bold:true,color:C.darkBlue,fontFace:"Calibri",align:"center",margin:0});
+    s7.addText(r.label,{x:px,y:py+0.22,w:1.1,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri",align:"center",margin:0});
+  });
+
+  // RIGHT PANEL: Practice area heatmap
+  s7.addShape(pres.shapes.RECTANGLE,{x:3.2,y:1.72,w:6.4,h:3.6,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+  s7.addText("PRACTICE AREA COVERAGE",{x:3.3,y:1.82,w:6.2,h:0.22,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
+  [[C.emerald,"Strong"],[C.banana||"F5A623","Emerging"],[C.red,"Gap — no page"]].forEach(([col,lbl],i)=>{
+    const lx=3.3+i*1.85;
+    s7.addShape(pres.shapes.RECTANGLE,{x:lx,y:2.06,w:0.14,h:0.14,fill:{color:col},line:{color:col,width:0}});
+    s7.addText(lbl,{x:lx+0.2,y:2.04,w:1.5,h:0.18,fontSize:8,color:C.midGray,fontFace:"Calibri",margin:0});
+  });
+  const topicColors=[C.emerald,"F5A623",C.red];
+  const topicLabels=["Strong","Emerging","No page"];
+  const displayTopics=topics.length?topics:Array(10).fill({label:"–",score:0,keywords:0});
+  displayTopics.slice(0,10).forEach((t,i)=>{
+    const col=i%2,row2=Math.floor(i/2);
+    const tx=3.3+col*3.1,ty=2.3+row2*0.5;
+    const tc=topicColors[2-Math.min(2,t.score)];
+    const tl=topicLabels[2-Math.min(2,t.score)];
+    s7.addShape(pres.shapes.RECTANGLE,{x:tx,y:ty,w:2.9,h:0.42,fill:{color:C.white},line:{color:"E2EAF0",width:0.3}});
+    s7.addShape(pres.shapes.RECTANGLE,{x:tx,y:ty,w:0.06,h:0.42,fill:{color:tc},line:{color:tc,width:0}});
+    s7.addText(t.label,{x:tx+0.16,y:ty+0.04,w:1.75,h:0.34,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",valign:"middle",margin:0});
+    s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:tx+2.02,y:ty+0.08,w:0.72,h:0.26,fill:{color:tc},line:{color:tc,width:0},rectRadius:0.04});
+    s7.addText(tl,{x:tx+2.02,y:ty+0.08,w:0.72,h:0.26,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+  });
+  // Insight bar
+  const gapCount=topics.filter(t=>t.score===0).length;
+  const strongCount=topics.filter(t=>t.score===2).length;
+  const insightTxt=gapCount>3
+    ? `⚠️  ${gapCount} practice areas have no ranking content — competitors can dominate these topics.`
+    : strongCount>=7
+    ? `✅  Strong topical coverage across ${strongCount} practice areas — solid foundation for authority.`
+    : `📈  Mixed coverage — ${strongCount} strong areas, ${gapCount} gaps. New content pages will close gaps fast.`;
+  s7.addShape(pres.shapes.RECTANGLE,{x:3.2,y:5.42,w:6.4,h:0.4,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
+  s7.addText(insightTxt,{x:3.35,y:5.44,w:6.1,h:0.36,fontSize:9,color:C.white,fontFace:"Calibri",valign:"middle"});
+  footer(s7,D);
+
+  // S8 PRIORITY RECOMMENDATIONS
+  const s8=pres.addSlide(); s8.background={color:C.white};
+  slbl(s8,"PRIORITY RECOMMENDATIONS"); stit(s8,"Ordered by client impact, not effort.");
+  const acts=(narrative.actions||[]).slice(0,6);
   const aColors=[C.red,C.lightBlue,C.lightBlue,C.emerald,C.emerald,C.midGray];
   acts.forEach((a,i)=>{
     const col=i%2,row=Math.floor(i/2),x=0.4+col*4.85,y=1.82+row*1.08;
-    s7.addShape(pres.shapes.RECTANGLE,{x,y,w:4.65,h:0.96,fill:{color:C.white},shadow:ms(),line:{color:"E2EAF0",width:0.4}});
-    s7.addShape(pres.shapes.RECTANGLE,{x,y,w:0.5,h:0.96,fill:{color:aColors[i]||C.midGray},line:{color:aColors[i]||C.midGray,width:0}});
-    s7.addText(a.n,    {x,y,w:0.5,h:0.96,fontSize:20,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle"});
-    s7.addText(a.title,{x:x+0.6,y:y+0.07,w:3.9,h:0.26,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
-    s7.addText(a.body, {x:x+0.6,y:y+0.35,w:3.9,h:0.36,fontSize:9,color:C.dark,fontFace:"Calibri",margin:0});
-    s7.addText(`Impact: ${a.impact||""}   Effort: ${a.effort||""}`,{x:x+0.6,y:y+0.74,w:3.9,h:0.18,fontSize:8,bold:true,color:C.midGray,fontFace:"Calibri",margin:0});
+    s8.addShape(pres.shapes.RECTANGLE,{x,y,w:4.65,h:0.96,fill:{color:C.white},shadow:ms(),line:{color:"E2EAF0",width:0.4}});
+    s8.addShape(pres.shapes.RECTANGLE,{x,y,w:0.5,h:0.96,fill:{color:aColors[i]||C.midGray},line:{color:aColors[i]||C.midGray,width:0}});
+    s8.addText(a.n,    {x,y,w:0.5,h:0.96,fontSize:20,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle"});
+    s8.addText(a.title,{x:x+0.6,y:y+0.07,w:3.9,h:0.26,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
+    s8.addText(a.body, {x:x+0.6,y:y+0.35,w:3.9,h:0.36,fontSize:9,color:C.dark,fontFace:"Calibri",margin:0});
+    s8.addText(`Impact: ${a.impact||""}   Effort: ${a.effort||""}`,{x:x+0.6,y:y+0.74,w:3.9,h:0.18,fontSize:8,bold:true,color:C.midGray,fontFace:"Calibri",margin:0});
   });
-  footer(s7,D);
+  footer(s8,D);
 
-  // S8 SEQUENCE — priority cards, no timelines
-  const s8=pres.addSlide(); s8.background={color:C.darkBlue};
-  s8.addShape(pres.shapes.RECTANGLE,{x:0,y:0,w:0.22,h:5.625,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
-  s8.addShape(pres.shapes.RECTANGLE,{x:0,y:5.1,w:10,h:0.525,fill:{color:"0C1E3A"},line:{color:"0C1E3A",width:0}});
-  s8.addShape(pres.shapes.OVAL,{x:0.5,y:0.55,w:0.5,h:0.5,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
-  s8.addText("▶",{x:0.5,y:0.6,w:0.5,h:0.4,fontSize:16,color:C.darkBlue,fontFace:"Calibri",align:"center"});
-  s8.addText("Recommended Next Steps",{x:0.5,y:1.15,w:9,h:0.55,fontSize:34,bold:true,color:C.white,fontFace:"Calibri"});
-  s8.addText("Ordered by impact. Quick wins first, sustainable growth last.",{x:0.5,y:1.76,w:9,h:0.3,fontSize:12,color:"7ABCD4",fontFace:"Calibri",italic:true});
+  // S9 SEQUENCE — priority cards, no timelines
+  const s9=pres.addSlide(); s9.background={color:C.darkBlue};
+  s9.addShape(pres.shapes.RECTANGLE,{x:0,y:0,w:0.22,h:5.625,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
+  s9.addShape(pres.shapes.RECTANGLE,{x:0,y:5.1,w:10,h:0.525,fill:{color:"0C1E3A"},line:{color:"0C1E3A",width:0}});
+  s9.addShape(pres.shapes.OVAL,{x:0.5,y:0.55,w:0.5,h:0.5,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
+  s9.addText("▶",{x:0.5,y:0.6,w:0.5,h:0.4,fontSize:16,color:C.darkBlue,fontFace:"Calibri",align:"center"});
+  s9.addText("Recommended Next Steps",{x:0.5,y:1.15,w:9,h:0.55,fontSize:34,bold:true,color:C.white,fontFace:"Calibri"});
+  s9.addText("Ordered by impact. Quick wins first, sustainable growth last.",{x:0.5,y:1.76,w:9,h:0.3,fontSize:12,color:"7ABCD4",fontFace:"Calibri",italic:true});
   const seq=narrative.sequence||[];
   const seqColors=[C.lightBlue,C.lightBlue,C.emerald,C.banana];
   const seqIcons=["1","2","3","4"];
   seq.forEach((t,i)=>{
     const col=i%2, row=Math.floor(i/2);
     const x=0.4+col*4.85, y=2.2+row*1.35;
-    s8.addShape(pres.shapes.RECTANGLE,{x,y,w:4.65,h:1.18,fill:{color:"0F2040"},shadow:{type:"outer",blur:8,offset:2,angle:135,color:"000000",opacity:0.2},line:{color:"1A3A60",width:0.5}});
-    s8.addShape(pres.shapes.RECTANGLE,{x,y,w:0.55,h:1.18,fill:{color:seqColors[i]||C.lightBlue},line:{color:seqColors[i]||C.lightBlue,width:0}});
-    s8.addText(seqIcons[i],{x,y,w:0.55,h:1.18,fontSize:22,bold:true,color:C.darkBlue,fontFace:"Calibri",align:"center",valign:"middle"});
-    s8.addText(t.action||t.week||"",{x:x+0.65,y:y+0.1,w:3.85,h:0.32,fontSize:12,bold:true,color:C.white,fontFace:"Calibri",margin:0});
-    s8.addText(t.why||t.body||"",  {x:x+0.65,y:y+0.46,w:3.85,h:0.58,fontSize:10,color:"A8C4D8",fontFace:"Calibri",margin:0});
+    s9.addShape(pres.shapes.RECTANGLE,{x,y,w:4.65,h:1.18,fill:{color:"0F2040"},shadow:{type:"outer",blur:8,offset:2,angle:135,color:"000000",opacity:0.2},line:{color:"1A3A60",width:0.5}});
+    s9.addShape(pres.shapes.RECTANGLE,{x,y,w:0.55,h:1.18,fill:{color:seqColors[i]||C.lightBlue},line:{color:seqColors[i]||C.lightBlue,width:0}});
+    s9.addText(seqIcons[i],{x,y,w:0.55,h:1.18,fontSize:22,bold:true,color:C.darkBlue,fontFace:"Calibri",align:"center",valign:"middle"});
+    s9.addText(t.action||t.week||"",{x:x+0.65,y:y+0.1,w:3.85,h:0.32,fontSize:12,bold:true,color:C.white,fontFace:"Calibri",margin:0});
+    s9.addText(t.why||t.body||"",  {x:x+0.65,y:y+0.46,w:3.85,h:0.58,fontSize:10,color:"A8C4D8",fontFace:"Calibri",margin:0});
   });
-  s8.addText(`${D.preparedBy}   ·   ${D.domain}   ·   ${D.date||""}`,{x:0.5,y:5.15,w:9,h:0.25,fontSize:8,color:"3A6080",fontFace:"Calibri"});
+  s9.addText(`${D.preparedBy}   ·   ${D.domain}   ·   ${D.date||""}`,{x:0.5,y:5.15,w:9,h:0.25,fontSize:8,color:"3A6080",fontFace:"Calibri"});
 
   return await pres.write({outputType:"nodebuffer"});
 }
@@ -794,6 +928,12 @@ app.post("/generate", upload.fields([
       if (data.domain && SEMRUSH_KEY) {
         console.log(`[${jobId}] Fetching SEMrush competitors...`);
         data.competitors = await semrushCompetitors(data.domain);
+      }
+
+      // SEMrush organic keyword + content audit
+      if (data.domain && SEMRUSH_KEY) {
+        console.log(`[${jobId}] Fetching SEMrush organic keywords for content audit...`);
+        data.organicAudit = await semrushOrganicKeywords(data.domain);
       }
 
       // BrightLocal citation audit
