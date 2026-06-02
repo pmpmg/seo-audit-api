@@ -401,8 +401,8 @@ function drawGauge(pres, slide, x, y, w, h, score, label) {
 
 // Simple icon substitutes using colored text/shapes
 function drawCheckIcon(slide, x, y, color) {
-  slide.addShape("oval", { x, y, w:0.5, h:0.5, fill:{color:"CAE7D9"}, line:{color:"CAE7D9",width:0} });
-  slide.addText("✓", { x, y:y+0.05, w:0.5, h:0.4, fontSize:16, bold:true, color:C.emerald, fontFace:"Calibri", align:"center" });
+  slide.addShape("oval", { x, y, w:0.46, h:0.46, fill:{color:C.emerald}, line:{color:C.emerald,width:0} });
+  slide.addText("✓", { x:x+0.01, y:y+0.05, w:0.44, h:0.38, fontSize:13, bold:true, color:C.white, fontFace:"Calibri", align:"center", valign:"middle" });
 }
 
 const ms=()=>({type:"outer",blur:10,offset:3,angle:135,color:"000000",opacity:0.07});
@@ -515,11 +515,21 @@ async function buildPptx(data, narrative) {
   s5.addText("CORE WEB VITALS",{x:5.3,y:1.78,w:4.3,h:0.22,fontSize:9,bold:true,color:C.lightBlue,charSpacing:3,fontFace:"Calibri"});
   vitals.forEach((v,i)=>{
     const y=2.1+i*0.82;
+    // Determine pass/fail color based on value vs goal threshold
+    function vitalColor(val, good) {
+      if (!val || val === "—") return C.midGray;
+      const num = parseFloat(String(val).replace(/[^0-9.]/g,""));
+      if (isNaN(num)) return C.midGray;
+      const threshold = parseFloat(String(good).replace(/[^0-9.]/g,""));
+      if (isNaN(threshold)) return C.midGray;
+      return num <= threshold ? C.emerald : C.red;
+    }
+    const vc = vitalColor(v.value, v.good);
     s5.addShape(pres.shapes.RECTANGLE,{x:5.3,y,w:4.3,h:0.7,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
-    s5.addShape(pres.shapes.RECTANGLE,{x:5.3,y,w:0.06,h:0.7,fill:{color:C.red},line:{color:C.red,width:0}});
+    s5.addShape(pres.shapes.RECTANGLE,{x:5.3,y,w:0.06,h:0.7,fill:{color:vc},line:{color:vc,width:0}});
     s5.addText(v.label,{x:5.48,y:y+0.08,w:2.4,h:0.25,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
     s5.addText(`Goal: ${v.good}`,{x:5.48,y:y+0.35,w:2.4,h:0.22,fontSize:9,color:C.midGray,fontFace:"Calibri",margin:0});
-    s5.addText(String(v.value),{x:8.5,y:y+0.15,w:1.0,h:0.35,fontSize:18,bold:true,color:C.red,fontFace:"Calibri",align:"right",margin:0});
+    s5.addText(String(v.value),{x:8.5,y:y+0.15,w:1.0,h:0.35,fontSize:18,bold:true,color:vc,fontFace:"Calibri",align:"right",margin:0});
   });
   footer(s5,D);
 
@@ -532,11 +542,12 @@ async function buildPptx(data, narrative) {
   // Merge SEMrush competitors with Majestic competitor backlink data
   const semrushComps   = D.competitors || [];
   const majesticComps  = D.majesticCompetitors || [];
-  const competitors = semrushComps.map((c,i) => ({
-    ...c,
-    ...(majesticComps[i] || {}),
-  }));
-  // If no SEMrush comps but have Majestic comps, use those
+  // Merge: try to match by domain, fallback to index order
+  const competitors = semrushComps.map((c,i) => {
+    const domainMatch = majesticComps.find(m => m.domain && c.domain && m.domain.replace(/^www\./,"") === c.domain.replace(/^www\./,""));
+    return { ...c, ...(domainMatch || majesticComps[i] || {}) };
+  });
+  // If no SEMrush comps but have Majestic comps, use those directly
   if (!competitors.length && majesticComps.length) {
     competitors.push(...majesticComps);
   }
@@ -596,16 +607,16 @@ async function buildPptx(data, narrative) {
   // S7 RECOMMENDATIONS
   const s7=pres.addSlide(); s7.background={color:C.white};
   slbl(s7,"PRIORITY RECOMMENDATIONS"); stit(s7,"Ordered by client impact, not effort.");
-  const acts=narrative.actions||[];
+  const acts=(narrative.actions||[]).slice(0,6); // cap at 6 to fit slide
   const aColors=[C.red,C.lightBlue,C.lightBlue,C.emerald,C.emerald,C.midGray];
   acts.forEach((a,i)=>{
-    const col=i%2,row=Math.floor(i/2),x=0.4+col*4.85,y=1.82+row*1.12;
-    s7.addShape(pres.shapes.RECTANGLE,{x,y,w:4.65,h:1.0,fill:{color:C.white},shadow:ms(),line:{color:"E2EAF0",width:0.4}});
-    s7.addShape(pres.shapes.RECTANGLE,{x,y,w:0.5,h:1.0,fill:{color:aColors[i]||C.midGray},line:{color:aColors[i]||C.midGray,width:0}});
-    s7.addText(a.n,    {x,y,w:0.5,h:1.0,fontSize:20,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle"});
-    s7.addText(a.title,{x:x+0.6,y:y+0.08,w:3.9,h:0.28,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
-    s7.addText(a.body, {x:x+0.6,y:y+0.38,w:3.9,h:0.38,fontSize:9,color:C.dark,fontFace:"Calibri",margin:0});
-    s7.addText(`Impact: ${a.impact||""}   Effort: ${a.effort||""}`,{x:x+0.6,y:y+0.78,w:3.9,h:0.18,fontSize:8,bold:true,color:C.midGray,fontFace:"Calibri",margin:0});
+    const col=i%2,row=Math.floor(i/2),x=0.4+col*4.85,y=1.82+row*1.08;
+    s7.addShape(pres.shapes.RECTANGLE,{x,y,w:4.65,h:0.96,fill:{color:C.white},shadow:ms(),line:{color:"E2EAF0",width:0.4}});
+    s7.addShape(pres.shapes.RECTANGLE,{x,y,w:0.5,h:0.96,fill:{color:aColors[i]||C.midGray},line:{color:aColors[i]||C.midGray,width:0}});
+    s7.addText(a.n,    {x,y,w:0.5,h:0.96,fontSize:20,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle"});
+    s7.addText(a.title,{x:x+0.6,y:y+0.07,w:3.9,h:0.26,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
+    s7.addText(a.body, {x:x+0.6,y:y+0.35,w:3.9,h:0.36,fontSize:9,color:C.dark,fontFace:"Calibri",margin:0});
+    s7.addText(`Impact: ${a.impact||""}   Effort: ${a.effort||""}`,{x:x+0.6,y:y+0.74,w:3.9,h:0.18,fontSize:8,bold:true,color:C.midGray,fontFace:"Calibri",margin:0});
   });
   footer(s7,D);
 
@@ -748,6 +759,7 @@ app.get("/job/:id", (req, res) => {
   res.json({ status: "pending" });
 });
 
+app.get("/", (req,res) => res.sendFile(path.join(__dirname,"public","index.html")));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`SEO Audit API v3 running on port ${PORT}`));
