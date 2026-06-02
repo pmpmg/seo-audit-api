@@ -48,6 +48,9 @@
   .progress-track{width:100%;height:8px;background:#E2EAF0;border-radius:4px;overflow:hidden;}
   .progress-fill{height:100%;background:#009ABF;border-radius:4px;width:0%;transition:width .6s ease;}
   .legend{font-size:11px;color:#8A9BB0;margin-top:8px;text-align:center;}
+  .redownload-wrap{display:none;margin-top:12px;text-align:center;}
+  .redownload-btn{display:inline-block;padding:10px 24px;background:#12284C;color:white;border:none;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;letter-spacing:.5px;}
+  .redownload-btn:hover{background:#1a3a6a;}
   @media(max-width:600px){.field-row{grid-template-columns:1fr;}.field-source{display:none;}}
 </style>
 </head>
@@ -214,6 +217,9 @@
   </div>
 
   <div id="status" class="status"></div>
+  <div class="redownload-wrap" id="redownloadWrap">
+    <button class="redownload-btn" onclick="redownload()">⬇ &nbsp; Re-download Last Deck</button>
+  </div>
   <p class="legend">* Required field &nbsp;·&nbsp; All other fields auto-populate or improve deck quality</p>
 
 </div>
@@ -273,6 +279,24 @@ sfUploadArea.addEventListener('drop', e => {
 
 // Total estimated duration in ms (~2.5 mins with BrightLocal)
 const TOTAL_MS = 150000;
+let lastPptxBase64 = null;
+let lastFileName    = null;
+
+function redownload() {
+  if (!lastPptxBase64 || !lastFileName) return;
+  triggerDownload(lastPptxBase64, lastFileName);
+}
+
+function triggerDownload(base64, fileName) {
+  const binary = atob(base64);
+  const bytes  = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.presentationml.presentation'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = fileName; a.click();
+  URL.revokeObjectURL(url);
+}
 let _barInterval = null, _timerInterval = null, _startTime = null;
 
 function startProgressAnimation() {
@@ -354,15 +378,13 @@ async function generate() {
 
     finishProgress();
 
-    const binary = atob(pptxBase64);
-    const bytes  = new Uint8Array(binary.length);
-    for (let i=0; i<binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const blob = new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.presentationml.presentation'});
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href=url; a.download=fileName; a.click();
-    URL.revokeObjectURL(url);
+    // Store for re-download
+    lastPptxBase64 = pptxBase64;
+    lastFileName   = fileName;
 
+    triggerDownload(pptxBase64, fileName);
+
+    document.getElementById('redownloadWrap').style.display = 'block';
     showStatus('success',`✅ Done! "${fileName}" is downloading now.`);
 
   } catch(err) {
