@@ -386,19 +386,52 @@ AUDIT DATA: ${JSON.stringify(data)}`;
 // ── PPTX HELPERS ─────────────────────────────────────────────
 // Pure PPTX gauge — draws donut using arc shapes
 async function drawGauge(pres, slide, x, y, w, h, score, label) {
+  const color = score >= 90 ? C.emerald : score >= 50 ? C.lightBlue : C.red;
+  const badge = score >= 90 ? "EXCELLENT" : score >= 50 ? "GOOD" : "NEEDS WORK";
+  const cx = x + w / 2;
+
   try {
-    const pngBuf  = await renderGaugePng(score, label);
-    const b64     = pngBuf.toString("base64");
-    slide.addImage({ data: `image/png;base64,${b64}`, x, y, w, h });
+    const pngBuf = await renderGaugePng(score);
+    const b64    = pngBuf.toString("base64");
+    // Arc image — full width, top portion of the gauge area
+    const imgH = h * 0.72;
+    slide.addImage({ data: `image/png;base64,${b64}`, x, y, w, h: imgH });
+
+    // Score number centered inside arc
+    slide.addText(`${score}`, {
+      x, y: y + imgH * 0.28, w, h: imgH * 0.28,
+      fontSize: 28, bold: true, color, fontFace: "Calibri",
+      align: "center", valign: "middle", margin: 0
+    });
+    // /100
+    slide.addText("/100", {
+      x, y: y + imgH * 0.56, w, h: imgH * 0.18,
+      fontSize: 10, color: C.midGray, fontFace: "Calibri",
+      align: "center", valign: "middle", margin: 0
+    });
+    // Label
+    slide.addText(label, {
+      x, y: y + imgH + 0.04, w, h: 0.26,
+      fontSize: 12, bold: true, color: C.darkBlue, fontFace: "Calibri",
+      align: "center", margin: 0
+    });
+    // Badge pill
+    const bw = 0.9, bh = 0.22;
+    slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
+      x: cx - bw/2, y: y + imgH + 0.34, w: bw, h: bh,
+      fill: { color }, line: { color, width: 0 }, rectRadius: 0.05
+    });
+    slide.addText(badge, {
+      x: cx - bw/2, y: y + imgH + 0.34, w: bw, h: bh,
+      fontSize: 8, bold: true, color: C.white, fontFace: "Calibri",
+      align: "center", valign: "middle", margin: 0
+    });
   } catch(e) {
-    // Fallback if canvas not available
     console.error("Gauge render failed, using fallback:", e.message);
-    const color = score >= 90 ? C.emerald : score >= 50 ? C.lightBlue : C.red;
-    const cx = x + w/2, cy = y + h/2;
-    slide.addShape(pres.shapes.OVAL, { x: cx-0.9, y: cy-0.9, w:1.8, h:1.8, line:{color:"E2EAF0",width:8}, fill:{color:C.white} });
-    slide.addShape(pres.shapes.OVAL, { x: cx-0.9, y: cy-0.9, w:1.8, h:1.8, line:{color,width:8}, fill:{color:C.white} });
-    slide.addText(`${score}`, { x: cx-0.9, y: cy-0.28, w:1.8, h:0.5, fontSize:28, bold:true, color, fontFace:"Calibri", align:"center", margin:0 });
-    slide.addText("/100", { x: cx-0.9, y: cy+0.24, w:1.8, h:0.24, fontSize:10, color:C.midGray, fontFace:"Calibri", align:"center", margin:0 });
+    slide.addShape(pres.shapes.OVAL, { x: cx-0.9, y: y+0.1, w:1.8, h:1.8, line:{color:"E2EAF0",width:8}, fill:{color:C.white} });
+    slide.addShape(pres.shapes.OVAL, { x: cx-0.9, y: y+0.1, w:1.8, h:1.8, line:{color,width:8}, fill:{color:C.white} });
+    slide.addText(`${score}`, { x, y: y+0.6, w, h:0.5, fontSize:28, bold:true, color, fontFace:"Calibri", align:"center", margin:0 });
+    slide.addText("/100", { x, y: y+1.1, w, h:0.24, fontSize:10, color:C.midGray, fontFace:"Calibri", align:"center", margin:0 });
     slide.addText(label, { x, y: y+h-0.3, w, h:0.28, fontSize:11, bold:true, color:C.darkBlue, fontFace:"Calibri", align:"center" });
   }
 }
@@ -427,53 +460,33 @@ function kpi(pres,s,x,y,w,h,val,lbl,sub,color){
 }
 
 // ── GAUGE IMAGE GENERATOR ─────────────────────────────────────
-// Renders a partial-arc gauge as SVG, then rasterizes to PNG via sharp
-async function renderGaugePng(score, label) {
-  const sharp  = require("sharp");
-  const pct    = Math.max(0, Math.min(100, score));
-  const color  = pct >= 90 ? "#00684F" : pct >= 50 ? "#009ABF" : "#C0392B";
-  const badge  = pct >= 90 ? "EXCELLENT" : pct >= 50 ? "GOOD" : "NEEDS WORK";
+// Renders ONLY the arc ring as PNG via sharp (no text — text overlaid by pptxgenjs)
+async function renderGaugePng(score) {
+  const sharp = require("sharp");
+  const pct   = Math.max(0, Math.min(100, score));
+  const color = pct >= 90 ? "#00684F" : pct >= 50 ? "#009ABF" : "#C0392B";
 
-  const SIZE = 300, cx = 150, cy = 140, R = 108, SW = 22;
-
-  // Calculate arc path for the score portion (135° start, 270° sweep)
+  const SIZE = 300, cx = 150, cy = 150, R = 108, SW = 24;
   const startDeg = 135, sweepDeg = 270;
   const scoreDeg = (sweepDeg * pct) / 100;
+
   function polarToXY(deg) {
     const rad = (deg * Math.PI) / 180;
-    return { x: cx + R * Math.cos(rad), y: cy + R * Math.sin(rad) };
+    return { x: +(cx + R * Math.cos(rad)).toFixed(3), y: +(cy + R * Math.sin(rad)).toFixed(3) };
   }
-  const s = polarToXY(startDeg);
-  const e = polarToXY(startDeg + scoreDeg);
-  const trackE = polarToXY(startDeg + sweepDeg);
-  const largeArc = scoreDeg > 180 ? 1 : 0;
-  const trackLarge = sweepDeg > 180 ? 1 : 0;
 
-  // Badge pill dimensions
-  const bw = 150, bh = 34, br = 17;
-  const bx = cx - bw / 2, by = cy + R + 60;
+  const s      = polarToXY(startDeg);
+  const trackE = polarToXY(startDeg + sweepDeg);
+  const e      = polarToXY(startDeg + scoreDeg);
+  const trackLarge = 1; // 270° is always > 180
+  const largeArc   = scoreDeg > 180 ? 1 : 0;
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}">
   <rect width="${SIZE}" height="${SIZE}" fill="white"/>
-  <!-- Background track -->
   <path d="M ${s.x} ${s.y} A ${R} ${R} 0 ${trackLarge} 1 ${trackE.x} ${trackE.y}"
     fill="none" stroke="#E2EAF0" stroke-width="${SW}" stroke-linecap="round"/>
-  <!-- Score arc -->
   ${pct > 0 ? `<path d="M ${s.x} ${s.y} A ${R} ${R} 0 ${largeArc} 1 ${e.x} ${e.y}"
     fill="none" stroke="${color}" stroke-width="${SW}" stroke-linecap="round"/>` : ""}
-  <!-- Score number -->
-  <text x="${cx}" y="${cy - 2}" text-anchor="middle" dominant-baseline="middle"
-    font-family="Arial,sans-serif" font-size="72" font-weight="bold" fill="${color}">${pct}</text>
-  <!-- /100 -->
-  <text x="${cx}" y="${cy + 46}" text-anchor="middle" dominant-baseline="middle"
-    font-family="Arial,sans-serif" font-size="22" fill="#6B7A8D">/100</text>
-  <!-- Label -->
-  <text x="${cx}" y="${cy + R + 36}" text-anchor="middle" dominant-baseline="middle"
-    font-family="Arial,sans-serif" font-size="26" font-weight="bold" fill="#12284C">${label}</text>
-  <!-- Badge pill -->
-  <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="${br}" fill="${color}"/>
-  <text x="${cx}" y="${by + bh / 2}" text-anchor="middle" dominant-baseline="middle"
-    font-family="Arial,sans-serif" font-size="16" font-weight="bold" fill="white">${badge}</text>
 </svg>`;
 
   return await sharp(Buffer.from(svg)).png().toBuffer();
