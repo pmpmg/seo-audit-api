@@ -139,23 +139,36 @@ async function brightlocalCitationAudit(domain, businessName, location) {
   } catch(e) { return {}; }
 }
 
-// Google PageSpeed
+// Google PageSpeed — with per-request timeout
+async function fetchWithTimeout(url, ms=25000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch(e) { clearTimeout(timer); throw e; }
+}
+
 async function fetchPageSpeed(domain) {
   try {
     const base = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
     const url  = `https://${domain}`;
-    const [mobRes, dskRes] = await Promise.all([
-      fetch(`${base}?url=${encodeURIComponent(url)}&strategy=mobile`),
-      fetch(`${base}?url=${encodeURIComponent(url)}&strategy=desktop`),
-    ]);
-    const [mob, dsk] = await Promise.all([mobRes.json(), dskRes.json()]);
+    let mob = {}, dsk = {};
+    try {
+      const r = await fetchWithTimeout(`${base}?url=${encodeURIComponent(url)}&strategy=mobile`);
+      mob = await r.json();
+    } catch(e) { console.log("PageSpeed mobile failed:", e.message); }
+    try {
+      const r = await fetchWithTimeout(`${base}?url=${encodeURIComponent(url)}&strategy=desktop`);
+      dsk = await r.json();
+    } catch(e) { console.log("PageSpeed desktop failed:", e.message); }
 
-    const getMetric = (data, id) => {
-      const m = data?.lighthouseResult?.audits?.[id];
-      return m?.displayValue || m?.score || null;
+    const getMetric = (data, id) => data?.lighthouseResult?.audits?.[id]?.displayValue || "—";
+    const getScore  = (data) => {
+      const s = data?.lighthouseResult?.categories?.performance?.score;
+      return s ? Math.round(s * 100) : 0;
     };
-    const getScore = (data) => Math.round((data?.lighthouseResult?.categories?.performance?.score||0)*100);
-
     return {
       psMobile:      getScore(mob),
       psDesktop:     getScore(dsk),
@@ -165,17 +178,23 @@ async function fetchPageSpeed(domain) {
       psTBT:         getMetric(mob, "total-blocking-time"),
       psCLS:         getMetric(mob, "cumulative-layout-shift"),
     };
-  } catch(e) { return {}; }
+  } catch(e) { console.error("PageSpeed error:", e.message); return {}; }
 }
 
 // Claude narrative
 async function getNarrative(data) {
   const prompt = `You are an SEO analyst preparing a sales audit for a law firm prospect.
-Write persuasive, plain-language findings. Return ONLY valid JSON:
+CRITICAL RULES:
+- NEVER invent, guess, or name specific competitors. Only reference competitors if their domain appears in the data.
+- Use plain language a law firm partner can understand — no jargon.
+- Keep all text concise — titles under 8 words, body text under 40 words.
+- Base ALL findings strictly on the numbers provided. Do not invent statistics.
+
+Return ONLY valid JSON, no markdown:
 {
-  "executiveSummary": "One punchy sentence — what's the biggest opportunity.",
+  "executiveSummary": "One sentence — the single biggest opportunity on this site.",
   "whatIsWorking": [
-    {"title":"...","sub":"..."},
+    {"title":"Short title under 6 words","sub":"One sentence explanation based on the data."},
     {"title":"...","sub":"..."},
     {"title":"...","sub":"..."},
     {"title":"...","sub":"..."},
@@ -183,12 +202,12 @@ Write persuasive, plain-language findings. Return ONLY valid JSON:
     {"title":"...","sub":"..."}
   ],
   "problems": [
-    {"num":"01","title":"...","stat":"...","body":"...","tag":"High impact · Low effort"},
+    {"num":"01","title":"Short title under 6 words","stat":"Key metric from data","body":"2-3 sentences explaining the problem and its impact on client inquiries. No competitor names.","tag":"High impact · Low effort"},
     {"num":"02","title":"...","stat":"...","body":"...","tag":"High impact · Medium effort"},
     {"num":"03","title":"...","stat":"...","body":"...","tag":"High impact · High effort"}
   ],
   "actions": [
-    {"n":"1","title":"...","body":"...","impact":"High","effort":"Low"},
+    {"n":"1","title":"Short action title","body":"One sentence on what to do and why. No timelines.","impact":"High","effort":"Low"},
     {"n":"2","title":"...","body":"...","impact":"High","effort":"Med"},
     {"n":"3","title":"...","body":"...","impact":"High","effort":"Med"},
     {"n":"4","title":"...","body":"...","impact":"High","effort":"Low"},
@@ -196,10 +215,10 @@ Write persuasive, plain-language findings. Return ONLY valid JSON:
     {"n":"6","title":"...","body":"...","impact":"High","effort":"High"}
   ],
   "sequence": [
-    {"week":"Week 1","body":"..."},
-    {"week":"Weeks 1–3","body":"..."},
-    {"week":"Weeks 2–6","body":"..."},
-    {"week":"Ongoing","body":"..."}
+    {"priority":"1","action":"Most impactful first step","why":"One sentence on why this goes first."},
+    {"priority":"2","action":"Second step","why":"One sentence."},
+    {"priority":"3","action":"Third step","why":"One sentence."},
+    {"priority":"4","action":"Ongoing","why":"One sentence on what requires continuous attention."}
   ]
 }
 AUDIT DATA: ${JSON.stringify(data)}`;
@@ -349,11 +368,11 @@ async function buildPptx(data, narrative) {
     s4.addShape(pres.shapes.RECTANGLE,{x,y:1.9,w:2.9,h:0.68,fill:{color:pColors[i]},line:{color:pColors[i],width:0}});
     s4.addImage({data:ic,x:x+0.18,y:2.02,w:0.38,h:0.38});
     s4.addText(p.num||`0${i+1}`,{x:x+0.1,y:1.92,w:2.7,h:0.64,fontSize:26,bold:true,color:C.white,fontFace:"Calibri",align:"right",margin:0});
-    s4.addText(p.title||"",{x:x+0.18,y:2.65,w:2.55,h:0.35,fontSize:12,bold:true,color:C.darkBlue,fontFace:"Calibri"});
-    s4.addText(p.stat||"", {x:x+0.18,y:3.0, w:2.55,h:0.26,fontSize:10,bold:true,color:pColors[i],fontFace:"Calibri"});
-    s4.addText(p.body||"", {x:x+0.18,y:3.28,w:2.55,h:1.3, fontSize:9.5,color:C.dark,fontFace:"Calibri"});
+    s4.addText(p.title||"",{x:x+0.18,y:2.65,w:2.55,h:0.42,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri"});
+    s4.addText(p.stat||"", {x:x+0.18,y:3.1, w:2.55,h:0.24,fontSize:10,bold:true,color:pColors[i],fontFace:"Calibri"});
+    s4.addText(p.body||"", {x:x+0.18,y:3.36,w:2.55,h:1.18,fontSize:9,color:C.dark,fontFace:"Calibri"});
     s4.addShape(pres.shapes.RECTANGLE,{x:x+0.18,y:4.75,w:2.55,h:0.22,fill:{color:C.offWhite},line:{color:"E2EAF0",width:0}});
-    s4.addText(p.tag||"",{x:x+0.18,y:4.75,w:2.55,h:0.22,fontSize:8,bold:true,color:C.midGray,fontFace:"Calibri",align:"center"});
+    s4.addText(p.tag||"",{x:x+0.18,y:4.72,w:2.55,h:0.22,fontSize:8,bold:true,color:C.midGray,fontFace:"Calibri",align:"center"});
   }
   footer(s4,D);
 
@@ -466,22 +485,25 @@ async function buildPptx(data, narrative) {
   });
   footer(s7,D);
 
-  // S8 SEQUENCE
+  // S8 SEQUENCE — priority cards, no timelines
   const s8=pres.addSlide(); s8.background={color:C.darkBlue};
   s8.addShape(pres.shapes.RECTANGLE,{x:0,y:0,w:0.22,h:5.625,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
   s8.addShape(pres.shapes.RECTANGLE,{x:0,y:5.1,w:10,h:0.525,fill:{color:"0C1E3A"},line:{color:"0C1E3A",width:0}});
   const fi=await iconPng(FaFlag,"#"+C.lightBlue,256);
   s8.addImage({data:fi,x:0.5,y:0.55,w:0.5,h:0.5});
-  s8.addText("Recommended Sequence",{x:0.5,y:1.15,w:9,h:0.6,fontSize:34,bold:true,color:C.white,fontFace:"Calibri"});
-  s8.addText("Quick wins first. Build momentum. Every step moves the needle for new client inquiries.",{x:0.5,y:1.8,w:9,h:0.35,fontSize:12,color:"7ABCD4",fontFace:"Calibri",italic:true});
+  s8.addText("Recommended Next Steps",{x:0.5,y:1.15,w:9,h:0.55,fontSize:34,bold:true,color:C.white,fontFace:"Calibri"});
+  s8.addText("Ordered by impact. Quick wins first, sustainable growth last.",{x:0.5,y:1.76,w:9,h:0.3,fontSize:12,color:"7ABCD4",fontFace:"Calibri",italic:true});
   const seq=narrative.sequence||[];
   const seqColors=[C.lightBlue,C.lightBlue,C.emerald,C.banana];
+  const seqIcons=["1","2","3","4"];
   seq.forEach((t,i)=>{
-    const y=2.3+i*0.72;
-    s8.addShape(pres.shapes.RECTANGLE,{x:0.45,y:y+0.52,w:9.1,h:0.01,fill:{color:"1A3558"},line:{color:"1A3558",width:0}});
-    s8.addShape(pres.shapes.RECTANGLE,{x:0.45,y:y+0.1,w:0.06,h:0.35,fill:{color:seqColors[i]||C.lightBlue},line:{color:seqColors[i]||C.lightBlue,width:0}});
-    s8.addText(t.week,{x:0.65,y,w:1.6,h:0.45,fontSize:12,bold:true,color:seqColors[i]||C.lightBlue,fontFace:"Calibri"});
-    s8.addText(t.body,{x:2.4, y,w:7.1,h:0.45,fontSize:12,color:C.white,fontFace:"Calibri"});
+    const col=i%2, row=Math.floor(i/2);
+    const x=0.4+col*4.85, y=2.2+row*1.35;
+    s8.addShape(pres.shapes.RECTANGLE,{x,y,w:4.65,h:1.18,fill:{color:"0F2040"},shadow:{type:"outer",blur:8,offset:2,angle:135,color:"000000",opacity:0.2},line:{color:"1A3A60",width:0.5}});
+    s8.addShape(pres.shapes.RECTANGLE,{x,y,w:0.55,h:1.18,fill:{color:seqColors[i]||C.lightBlue},line:{color:seqColors[i]||C.lightBlue,width:0}});
+    s8.addText(seqIcons[i],{x,y,w:0.55,h:1.18,fontSize:22,bold:true,color:C.darkBlue,fontFace:"Calibri",align:"center",valign:"middle"});
+    s8.addText(t.action||t.week||"",{x:x+0.65,y:y+0.1,w:3.85,h:0.32,fontSize:12,bold:true,color:C.white,fontFace:"Calibri",margin:0});
+    s8.addText(t.why||t.body||"",  {x:x+0.65,y:y+0.46,w:3.85,h:0.58,fontSize:10,color:"A8C4D8",fontFace:"Calibri",margin:0});
   });
   s8.addText(`${D.preparedBy}   ·   ${D.domain}   ·   ${D.date||""}`,{x:0.5,y:5.15,w:9,h:0.25,fontSize:8,color:"3A6080",fontFace:"Calibri"});
 
@@ -527,11 +549,8 @@ app.post("/generate", upload.fields([
       data.competitors = comps;
     }
 
-    // Auto-fetch BrightLocal citation data
-    if (data.domain && BRIGHTLOCAL_KEY && !data.citationsFound) {
-      const bl = await brightlocalCitationAudit(data.domain, data.clientName, data.location);
-      Object.assign(data, bl);
-    }
+    // BrightLocal runs async in background — see /generate-brightlocal route
+    // citationsFound and napConsistency come from manual fields or background job
 
     // Get Claude narrative
     const narrative = await getNarrative(data);
