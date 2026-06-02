@@ -131,8 +131,13 @@ async function brightlocalCitationAudit(domain, businessName, location) {
         "postcode":      "",
       })
     });
-    const createData = await createRes.json();
-    if (!createData?.response?.["report-id"]) return {};
+    const createText = await createRes.json();
+    console.log("BrightLocal create response:", JSON.stringify(createText).slice(0, 300));
+    const createData = createText;
+    if (!createData?.response?.[`report-id`]) {
+      console.log("BrightLocal: no report-id returned. Full response:", JSON.stringify(createData));
+      return {};
+    }
 
     const reportId = createData.response["report-id"];
 
@@ -158,67 +163,59 @@ async function brightlocalCitationAudit(domain, businessName, location) {
 // SEMrush Site Audit — pulls full crawl data from existing campaign
 async function semrushSiteAuditData(projectId) {
   try {
-    // SEMrush Site Audit API v1 — correct endpoint format
     const key = SEMRUSH_KEY;
 
-    // Step 1: Get campaign info + latest snapshot ID
-    // Try both known project IDs (path ID and fid param)
-    const idsToTry = [...new Set([projectId, "18143167", "6093881"])];
-    let infoJson = {};
-    let workingId = null;
+    // The /info endpoint returns the audit summary directly — no snapshot needed.
+    // Actual response shape: { id, name, url, status, errors, warnings, notices,
+    //   broken, redirected, healthy, crawled, health_score, ... }
+    const infoUrl = `https://api.semrush.com/reports/v1/projects/${projectId}/siteaudit/info?key=${key}`;
+    console.log("SEMrush Site Audit info URL:", infoUrl);
 
-    for (const pid of idsToTry) {
-      const infoUrl = `https://api.semrush.com/reports/v1/projects/${pid}/siteaudit/info?key=${key}`;
-      console.log("SEMrush trying project ID:", pid);
-      try {
-        const infoRes  = await fetchWithTimeout(infoUrl, 15000);
-        const infoText = await infoRes.text();
-        console.log(`SEMrush response for ${pid}:`, infoText.slice(0, 300));
-        const parsed = JSON.parse(infoText);
-        if (parsed?.data || parsed?.last_snapshot_id || parsed?.snapshot_id) {
-          infoJson  = parsed;
-          workingId = pid;
-          break;
-        }
-      } catch(e) {
-        console.log(`SEMrush project ${pid} failed:`, e.message);
-      }
-    }
+    const infoRes  = await fetchWithTimeout(infoUrl, 15000);
+    const infoText = await infoRes.text();
+    console.log("SEMrush info raw response:", infoText.slice(0, 500));
 
-    if (!workingId) {
-      console.log("SEMrush: no valid project ID found. Tried:", idsToTry);
+    let info = {};
+    try { info = JSON.parse(infoText); } catch(e) {
+      console.error("SEMrush info parse error:", e.message, "| raw:", infoText.slice(0, 100));
       return {};
     }
 
-    const snapshotId = infoJson?.data?.last_snapshot_id
-                    || infoJson?.last_snapshot_id
-                    || infoJson?.snapshot_id;
-
-    if (!snapshotId) {
-      console.log("SEMrush: no snapshot ID in response:", JSON.stringify(infoJson).slice(0, 300));
+    // If we got an error object or "campaign not found" text
+    if (!info?.id && !info?.status) {
+      console.log("SEMrush: unexpected response shape:", JSON.stringify(info).slice(0, 200));
       return {};
     }
-    console.log("SEMrush: using project", workingId, "snapshot", snapshotId);
 
-    // Step 2: Get audit summary for this snapshot
-    const summaryUrl = `https://api.semrush.com/reports/v1/projects/${workingId}/siteaudit/snapshots/${snapshotId}/summary?key=${key}`;
-    const summaryRes  = await fetchWithTimeout(summaryUrl, 15000);
-    const summaryText = await summaryRes.text();
-    console.log("SEMrush summary:", summaryText.slice(0, 300));
+    console.log("SEMrush: project found:", info.name, "| status:", info.status,
+      "| errors:", info.errors, "| warnings:", info.warnings,
+      "| crawled:", info.crawled, "| health_score:", info.health_score);
 
-    let s = {};
-    try { s = JSON.parse(summaryText)?.data || JSON.parse(summaryText) || {}; } catch(e) {}
+    // Try to get the snapshot ID for the issues breakdown
+    const snapshotId = info.last_snapshot_id || info.snapshot_id || info.id;
 
-    // Step 3: Get issues list
-    const issuesUrl = `https://api.semrush.com/reports/v1/projects/${workingId}/siteaudit/snapshots/${snapshotId}/issues?key=${key}&limit=100`;
-    const issuesRes  = await fetchWithTimeout(issuesUrl, 15000);
-    const issuesText = await issuesRes.text();
-
+    // Step 2: Get issues list from the snapshot (best effort)
     let issues = [];
-    try {
-      const ij = JSON.parse(issuesText);
-      issues = ij?.data || ij?.issues || [];
-    } catch(e) {}
+    if (snapshotId && snapshotId !== info.id) {
+      try {
+        const issuesUrl = `https://api.semrush.com/reports/v1/projects/${projectId}/siteaudit/snapshots/${snapshotId}/issues?key=${key}&limit=100`;
+        const issuesRes  = await fetchWithTimeout(issuesUrl, 15000);
+        const issuesText = await issuesRes.text();
+        console.log("SEMrush issues:", issuesText.slice(0, 300));
+        const ij = JSON.parse(issuesText);
+        issues = ij?.data || ij?.issues || [];
+      } catch(e) { console.log("SEMrush issues fetch failed (non-fatal):", e.message); }
+    }
+
+    // Also try the crawled pages endpoint for page count
+    let pagesCrawled = parseInt(info.crawled || info.pages_crawled || 0);
+    let siteHealth   = parseInt(info.health_score || info.site_health || 0);
+
+    // If health_score missing, derive from errors/warnings/healthy ratio
+    if (!siteHealth && (info.healthy || info.errors)) {
+      const total = (info.healthy||0) + (info.errors||0) + (info.warnings||0);
+      if (total > 0) siteHealth = Math.round((info.healthy / total) * 100);
+    }
 
     // Map issues to our fields
     const issueMap = {};
@@ -236,12 +233,12 @@ async function semrushSiteAuditData(projectId) {
     });
 
     return {
-      pagesCrawled: parseInt(s.pages_crawled  || s.total_pages    || 0),
-      siteHealth:   parseInt(s.health_score   || s.site_health    || 0),
-      pages200:     parseInt(s.pages_with_200 || 0),
-      redirects:    parseInt(s.pages_with_301 || s.pages_with_3xx || 0),
-      errors:       parseInt(s.pages_with_4xx || 0),
-      aiReadiness:  parseInt(s.ai_readiness_score || 0),
+      pagesCrawled: pagesCrawled || parseInt(info.crawled || 0),
+      siteHealth:   siteHealth,
+      pages200:     parseInt(info.healthy   || 0),
+      redirects:    parseInt(info.redirected || 0),
+      errors:       parseInt(info.broken    || info.errors || 0),
+      aiReadiness:  parseInt(info.ai_readiness_score || 0),
       ...issueMap,
     };
   } catch(e) {
