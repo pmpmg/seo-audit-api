@@ -19,6 +19,21 @@ const SEMRUSH_KEY    = process.env.SEMRUSH_API_KEY    || "";
 const BRIGHTLOCAL_KEY= process.env.BRIGHTLOCAL_API_KEY|| "";
 const ANTHROPIC_KEY  = process.env.ANTHROPIC_API_KEY  || "";
 
+// ── JOB QUEUE ────────────────────────────────────────────────
+const jobs = new Map(); // jobId -> { status, result, error, createdAt }
+
+function createJob() {
+  const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  jobs.set(id, { status: 'pending', result: null, error: null, createdAt: Date.now() });
+  // Clean up jobs older than 30 minutes
+  setTimeout(() => jobs.delete(id), 30 * 60 * 1000);
+  return id;
+}
+
+function setJobDone(id, result)  { const j=jobs.get(id); if(j){ j.status='done';  j.result=result; } }
+function setJobError(id, error)  { const j=jobs.get(id); if(j){ j.status='error'; j.error=error;   } }
+function getJob(id)              { return jobs.get(id) || null; }
+
 // ── COLORS ───────────────────────────────────────────────────
 const C = {
   darkBlue:"12284C", lightBlue:"009ABF", emerald:"00684F",
@@ -140,7 +155,7 @@ async function brightlocalCitationAudit(domain, businessName, location) {
 }
 
 // Google PageSpeed — with per-request timeout
-async function fetchWithTimeout(url, ms=25000) {
+async function fetchWithTimeout(url, ms=12000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
@@ -156,11 +171,11 @@ async function fetchPageSpeed(domain) {
     const url  = `https://${domain}`;
     let mob = {}, dsk = {};
     try {
-      const r = await fetchWithTimeout(`${base}?url=${encodeURIComponent(url)}&strategy=mobile`);
+      const r = await fetchWithTimeout(`${base}?url=${encodeURIComponent(url)}&strategy=mobile`, 12000);
       mob = await r.json();
     } catch(e) { console.log("PageSpeed mobile failed:", e.message); }
     try {
-      const r = await fetchWithTimeout(`${base}?url=${encodeURIComponent(url)}&strategy=desktop`);
+      const r = await fetchWithTimeout(`${base}?url=${encodeURIComponent(url)}&strategy=desktop`, 12000);
       dsk = await r.json();
     } catch(e) { console.log("PageSpeed desktop failed:", e.message); }
 
@@ -512,64 +527,82 @@ async function buildPptx(data, narrative) {
 
 // ── ROUTES ────────────────────────────────────────────────────
 
-// Main generate endpoint — accepts multipart for Majestic CSV
+// POST /generate — accepts multipart, starts background job, returns jobId immediately
 app.post("/generate", upload.fields([
   { name: "majesticCsv",      maxCount: 1 },
   { name: "screamingFrogCsv", maxCount: 1 },
-]), async (req,res) => {
-  try {
-    const data = JSON.parse(req.body.data || "{}");
+]), (req, res) => {
+  const jobId = createJob();
 
-    // Parse Majestic CSV if uploaded
-    if (req.files?.majesticCsv?.[0]) {
-      const majestic = parseMajesticCsv(req.files.majesticCsv[0].buffer);
-      Object.assign(data, majestic);
+  // Parse files into buffers now (before async work)
+  const majesticBuf      = req.files?.majesticCsv?.[0]?.buffer      || null;
+  const screamingFrogBuf = req.files?.screamingFrogCsv?.[0]?.buffer || null;
+  const data = JSON.parse(req.body.data || "{}");
+
+  // Respond immediately with job ID
+  res.json({ jobId });
+
+  // Run everything in background — no timeout risk
+  (async () => {
+    try {
+      // Parse CSV uploads
+      if (majesticBuf) {
+        Object.assign(data, parseMajesticCsv(majesticBuf));
+      }
+      if (screamingFrogBuf) {
+        const sf = parseScreamingFrogCsv(screamingFrogBuf);
+        Object.assign(data, sf);
+        if (!data.pagesCrawled  && sf.sfPagesCrawled)  data.pagesCrawled  = sf.sfPagesCrawled;
+        if (!data.missingDesc   && sf.sfMissingDesc)   data.missingDesc   = sf.sfMissingDesc;
+        if (!data.titlesTooLong && sf.sfTitleTooLong)  data.titlesTooLong = sf.sfTitleTooLong;
+        if (!data.missingH1     && sf.sfMissingH1)     data.missingH1     = sf.sfMissingH1;
+      }
+
+      // PageSpeed
+      if (data.domain && !data.psPerformance) {
+        console.log(`[${jobId}] Fetching PageSpeed...`);
+        Object.assign(data, await fetchPageSpeed(data.domain));
+      }
+
+      // SEMrush competitors
+      if (data.domain && SEMRUSH_KEY) {
+        console.log(`[${jobId}] Fetching SEMrush competitors...`);
+        data.competitors = await semrushCompetitors(data.domain);
+      }
+
+      // BrightLocal citation audit
+      if (data.domain && BRIGHTLOCAL_KEY && !data.citationsFound) {
+        console.log(`[${jobId}] Running BrightLocal audit...`);
+        Object.assign(data, await brightlocalCitationAudit(data.domain, data.clientName, data.location));
+      }
+
+      // Claude narrative
+      console.log(`[${jobId}] Generating narrative...`);
+      const narrative = await getNarrative(data);
+
+      // Build PPTX
+      console.log(`[${jobId}] Building PPTX...`);
+      const pptxBase64 = await buildPptx(data, narrative);
+      const date       = data.date || new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"});
+      const fileName   = `SEO Audit — ${data.clientName} — ${date}.pptx`;
+
+      setJobDone(jobId, { pptxBase64, fileName });
+      console.log(`[${jobId}] Done.`);
+
+    } catch(err) {
+      console.error(`[${jobId}] Error:`, err.message);
+      setJobError(jobId, err.message);
     }
+  })();
+});
 
-    // Parse Screaming Frog CSV if uploaded
-    if (req.files?.screamingFrogCsv?.[0]) {
-      const sf = parseScreamingFrogCsv(req.files.screamingFrogCsv[0].buffer);
-      Object.assign(data, sf);
-      // Use SF data to fill gaps in SEMrush data if not already set
-      if (!data.pagesCrawled && sf.sfPagesCrawled) data.pagesCrawled = sf.sfPagesCrawled;
-      if (!data.missingDesc  && sf.sfMissingDesc)  data.missingDesc  = sf.sfMissingDesc;
-      if (!data.titlesTooLong && sf.sfTitleTooLong) data.titlesTooLong = sf.sfTitleTooLong;
-      if (!data.missingH1    && sf.sfMissingH1)    data.missingH1    = sf.sfMissingH1;
-    }
-
-    // Auto-fetch PageSpeed
-    if (data.domain && !data.psPerformance) {
-      const ps = await fetchPageSpeed(data.domain);
-      Object.assign(data, ps);
-    }
-
-    // Auto-fetch SEMrush competitors
-    if (data.domain && SEMRUSH_KEY) {
-      const comps = await semrushCompetitors(data.domain);
-      data.competitors = comps;
-    }
-
-    // Auto-fetch BrightLocal citation data (runs synchronously — takes ~60-90s)
-    if (data.domain && BRIGHTLOCAL_KEY && !data.citationsFound) {
-      console.log("Running BrightLocal audit...");
-      const bl = await brightlocalCitationAudit(data.domain, data.clientName, data.location);
-      Object.assign(data, bl);
-    }
-
-    // Get Claude narrative
-    const narrative = await getNarrative(data);
-
-    // Build deck
-    const pptxBase64 = await buildPptx(data, narrative);
-    const date       = data.date || new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"});
-    const fileName   = `SEO Audit — ${data.clientName} — ${date}.pptx`;
-
-    res.json({ pptxBase64, fileName });
-
-  } catch(err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
+// GET /job/:id — poll for job status
+app.get("/job/:id", (req, res) => {
+  const job = getJob(req.params.id);
+  if (!job) return res.status(404).json({ status: "not_found" });
+  if (job.status === "done")  return res.json({ status: "done",  ...job.result });
+  if (job.status === "error") return res.json({ status: "error", error: job.error });
+  res.json({ status: "pending" });
 });
 
 app.get("/", (req,res) => res.sendFile(path.join(__dirname,"public","index.html")));
