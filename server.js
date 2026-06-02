@@ -119,17 +119,16 @@ async function semrushSiteAudit(domain) {
 }
 
 // BrightLocal Citation Tracker — uses existing report in account
-async function brightlocalCitationAudit(domain, businessName, location) {
+async function brightlocalCitationAudit(domain, businessName, location, reportId, locationId) {
   try {
     const BASE    = "https://tools.brightlocal.com/seo-tools/api";
     const key     = BRIGHTLOCAL_KEY;
-    // Known report ID — from form or environment variable fallback
-    let REPORT_ID = data.brightlocalReportId || "";
+    let REPORT_ID = reportId || "";
 
     // If no report ID but location ID given, auto-lookup latest report
-    if (!REPORT_ID && data.brightlocalLocationId) {
+    if (!REPORT_ID && locationId) {
       try {
-        const lookupRes = await fetch(`${BASE}/v2/ct/get-all?api-key=${key}&location-id=${data.brightlocalLocationId}`);
+        const lookupRes = await fetch(`${BASE}/v2/ct/get-all?api-key=${key}&location-id=${locationId}`);
         const lookupData = await lookupRes.json();
         const reports = lookupData.response?.results || [];
         if (reports.length) {
@@ -137,7 +136,7 @@ async function brightlocalCitationAudit(domain, businessName, location) {
           REPORT_ID = String(latest.report_id || latest["report-id"] || "");
           console.log("BrightLocal: auto-resolved report ID from location:", REPORT_ID);
         }
-      } catch(e) { console.error("BrightLocal auto-lookup error:", e.message); }
+      } catch(e2) { console.error("BrightLocal auto-lookup error:", e2.message); }
     }
 
     if (!REPORT_ID) {
@@ -744,68 +743,86 @@ async function buildPptx(data, narrative) {
 
   // S7 CONTENT AUTHORITY
   const s7=pres.addSlide(); s7.background={color:C.white};
-  slbl(s7,"CONTENT AUTHORITY · SEMrush Organic Research");
+  slbl(s7,"CONTENT AUTHORITY · Screaming Frog + SEMrush");
   stit(s7,"How deep is the content? Where are the gaps?");
   const OA = D.organicAudit || {};
-  const topics = OA.topicCoverage || [];
+  const SF = D.sf || {};
+  const hasSF = Object.keys(SF).length > 0;
 
-  // LEFT PANEL: Organic snapshot
-  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:1.72,w:2.6,h:3.6,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
-  s7.addText("KEYWORD RANKINGS",{x:0.5,y:1.82,w:2.4,h:0.22,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
-  const snapRows=[
-    {label:"Top 3 positions",   val:OA.top3||0,           color:C.emerald},
-    {label:"Top 10 positions",  val:OA.top10||0,          color:C.lightBlue},
-    {label:"Top 20 positions",  val:OA.top20||0,          color:C.midGray},
-    {label:"Keywords tracked",  val:OA.totalKeywords||0,  color:C.darkBlue},
+  // ── LEFT PANEL: Site architecture & keyword rankings ──────────
+  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:1.72,w:2.9,h:3.6,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+
+  // Keyword snapshot (from SEMrush)
+  s7.addText("KEYWORD RANKINGS",{x:0.5,y:1.82,w:2.7,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
+  [
+    {label:"Top 3",  val:OA.top3||0,  color:C.emerald},
+    {label:"Top 10", val:OA.top10||0, color:C.lightBlue},
+    {label:"Top 20", val:OA.top20||0, color:C.midGray},
+  ].forEach((r,i)=>{
+    const x=0.5+i*0.92;
+    s7.addShape(pres.shapes.RECTANGLE,{x,y:2.06,w:0.82,h:0.64,fill:{color:C.white},line:{color:"E2EAF0",width:0.3}});
+    s7.addText(String(r.val),{x,y:2.1,w:0.82,h:0.36,fontSize:18,bold:true,color:r.color,fontFace:"Calibri",align:"center",margin:0});
+    s7.addText(r.label,{x,y:2.46,w:0.82,h:0.2,fontSize:8,color:C.midGray,fontFace:"Calibri",align:"center",margin:0});
+  });
+
+  // Page depth architecture (from Screaming Frog)
+  s7.addText("PAGE ARCHITECTURE",{x:0.5,y:2.82,w:2.7,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
+  const dd = SF.depthDist || {};
+  const archRows = [
+    {label:"Hub pages (depth 1)",     val:dd.d1||0,               note:"Top-level service pages"},
+    {label:"Sub-hub (depth 2)",        val:dd.d2||0,               note:"Topic clusters & subtopics"},
+    {label:"Spoke pages (depth 3)",    val:dd.d3||0,               note:"Supporting content"},
+    {label:"Deep pages (depth 4+)",    val:dd.d4plus||0,           note:"Blogs, Q&A, long-tail"},
   ];
-  snapRows.forEach((r,i)=>{
-    const y=2.18+i*0.58;
-    s7.addShape(pres.shapes.RECTANGLE,{x:0.5,y,w:2.4,h:0.48,fill:{color:C.white},line:{color:"E2EAF0",width:0.3}});
-    s7.addText(String(r.val),{x:0.56,y:y+0.04,w:0.9,h:0.4,fontSize:20,bold:true,color:r.color,fontFace:"Calibri",valign:"middle",margin:0});
-    s7.addText(r.label,{x:1.5,y:y+0.04,w:1.3,h:0.4,fontSize:9,color:C.midGray,fontFace:"Calibri",valign:"middle",margin:0});
-  });
-  // Page type chips
-  s7.addText("PAGE BREAKDOWN",{x:0.5,y:4.62,w:2.4,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
-  [{label:"Location pages",val:OA.locationPages||0},{label:"Service pages",val:OA.servicePages||0},
-   {label:"Strong (5+ kw)",val:OA.strongPages||0},{label:"Thin (1-2 kw)",val:OA.thinPages||0}].forEach((r,i)=>{
-    const px=0.5+(i%2)*1.2, py=4.86+Math.floor(i/2)*0.5;
-    s7.addShape(pres.shapes.RECTANGLE,{x:px,y:py,w:1.1,h:0.4,fill:{color:C.white},line:{color:"E2EAF0",width:0.3}});
-    s7.addText(String(r.val),{x:px,y:py+0.01,w:1.1,h:0.22,fontSize:13,bold:true,color:C.darkBlue,fontFace:"Calibri",align:"center",margin:0});
-    s7.addText(r.label,{x:px,y:py+0.22,w:1.1,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri",align:"center",margin:0});
+  archRows.forEach((r,i)=>{
+    const y=3.06+i*0.52;
+    const pct = (SF.htmlPages||1) > 0 ? Math.round((r.val/(SF.htmlPages||1))*100) : 0;
+    const barW = Math.max(0.04, Math.min(1.8, 1.8*(r.val/(SF.htmlPages||1))));
+    s7.addShape(pres.shapes.RECTANGLE,{x:0.5,y,w:2.7,h:0.44,fill:{color:C.white},line:{color:"E2EAF0",width:0.3}});
+    s7.addText(String(r.val),{x:0.56,y:y+0.04,w:0.4,h:0.36,fontSize:14,bold:true,color:C.darkBlue,fontFace:"Calibri",valign:"middle",margin:0});
+    s7.addText(r.label,{x:1.0,y:y+0.04,w:1.5,h:0.2,fontSize:8,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
+    // Mini bar
+    s7.addShape(pres.shapes.RECTANGLE,{x:1.0,y:y+0.26,w:1.8,h:0.1,fill:{color:"E2EAF0"},line:{color:"E2EAF0",width:0}});
+    if(barW>0.04) s7.addShape(pres.shapes.RECTANGLE,{x:1.0,y:y+0.26,w:barW,h:0.1,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
+    s7.addText(`${pct}%`,{x:2.82,y:y+0.22,w:0.22,h:0.18,fontSize:7,color:C.midGray,fontFace:"Calibri",align:"right",margin:0});
   });
 
-  // RIGHT PANEL: Practice area heatmap
-  s7.addShape(pres.shapes.RECTANGLE,{x:3.2,y:1.72,w:6.4,h:3.6,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
-  s7.addText("PRACTICE AREA COVERAGE",{x:3.3,y:1.82,w:6.2,h:0.22,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
-  [[C.emerald,"Strong"],[C.banana||"F5A623","Emerging"],[C.red,"Gap — no page"]].forEach(([col,lbl],i)=>{
-    const lx=3.3+i*1.85;
-    s7.addShape(pres.shapes.RECTANGLE,{x:lx,y:2.06,w:0.14,h:0.14,fill:{color:col},line:{color:col,width:0}});
-    s7.addText(lbl,{x:lx+0.2,y:2.04,w:1.5,h:0.18,fontSize:8,color:C.midGray,fontFace:"Calibri",margin:0});
+  // ── RIGHT PANEL: Content quality audit ────────────────────────
+  s7.addShape(pres.shapes.RECTANGLE,{x:3.5,y:1.72,w:6.1,h:3.6,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+  s7.addText("CONTENT QUALITY AUDIT",{x:3.6,y:1.82,w:5.9,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
+
+  // 3-column issue grid
+  const issues = [
+    {label:"Titles too long",    val:SF.titlesOver60||0,    total:SF.htmlPages||0, threshold:0, icon:"📏"},
+    {label:"Duplicate meta desc",val:SF.metaDuplicate||0,   total:SF.htmlPages||0, threshold:0, icon:"📋"},
+    {label:"Meta desc too long", val:SF.metaOver155||0,     total:SF.htmlPages||0, threshold:0, icon:"📝"},
+    {label:"Low content pages",  val:SF.lowContentPages||0, total:SF.htmlPages||0, threshold:0, icon:"📄"},
+    {label:"Hard to read pages", val:SF.readabilityHard||0, total:SF.htmlPages||0, threshold:0, icon:"📖"},
+    {label:"Missing alt text",   val:SF.missingAltText||0,  total:SF.htmlPages||0, threshold:0, icon:"🖼"},
+    {label:"Missing canonicals", val:SF.missingCanonical||0,total:SF.htmlPages||0, threshold:0, icon:"🔗"},
+    {label:"Redirect chains",    val:SF.redirects3xx||0,    total:SF.totalUrlsCrawled||0, threshold:0, icon:"↪"},
+    {label:"4xx errors",         val:SF.errors4xx||0,       total:SF.totalUrlsCrawled||0, threshold:0, icon:"❌"},
+  ];
+  issues.forEach((iss,i)=>{
+    const col=i%3, row=Math.floor(i/3);
+    const ix=3.6+col*1.98, iy=2.06+row*0.98;
+    const isOk = iss.val === 0;
+    const tc = isOk ? C.emerald : iss.val > (iss.total * 0.3) ? C.red : "F5A623";
+    s7.addShape(pres.shapes.RECTANGLE,{x:ix,y:iy,w:1.88,h:0.88,fill:{color:C.white},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+    s7.addShape(pres.shapes.RECTANGLE,{x:ix,y:iy,w:1.88,h:0.04,fill:{color:tc},line:{color:tc,width:0}});
+    s7.addText(String(iss.val),{x:ix+0.08,y:iy+0.1,w:0.6,h:0.46,fontSize:22,bold:true,color:tc,fontFace:"Calibri",valign:"middle",margin:0});
+    s7.addText(iss.label,{x:ix+0.08,y:iy+0.54,w:1.7,h:0.28,fontSize:8,color:C.midGray,fontFace:"Calibri",margin:0});
   });
-  const topicColors=[C.emerald,"F5A623",C.red];
-  const topicLabels=["Strong","Emerging","No page"];
-  const displayTopics=topics.length?topics:Array(10).fill({label:"–",score:0,keywords:0});
-  displayTopics.slice(0,10).forEach((t,i)=>{
-    const col=i%2,row2=Math.floor(i/2);
-    const tx=3.3+col*3.1,ty=2.3+row2*0.5;
-    const tc=topicColors[2-Math.min(2,t.score)];
-    const tl=topicLabels[2-Math.min(2,t.score)];
-    s7.addShape(pres.shapes.RECTANGLE,{x:tx,y:ty,w:2.9,h:0.42,fill:{color:C.white},line:{color:"E2EAF0",width:0.3}});
-    s7.addShape(pres.shapes.RECTANGLE,{x:tx,y:ty,w:0.06,h:0.42,fill:{color:tc},line:{color:tc,width:0}});
-    s7.addText(t.label,{x:tx+0.16,y:ty+0.04,w:1.75,h:0.34,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",valign:"middle",margin:0});
-    s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:tx+2.02,y:ty+0.08,w:0.72,h:0.26,fill:{color:tc},line:{color:tc,width:0},rectRadius:0.04});
-    s7.addText(tl,{x:tx+2.02,y:ty+0.08,w:0.72,h:0.26,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
-  });
+
   // Insight bar
-  const gapCount=topics.filter(t=>t.score===0).length;
-  const strongCount=topics.filter(t=>t.score===2).length;
-  const insightTxt=gapCount>3
-    ? `⚠️  ${gapCount} practice areas have no ranking content — competitors can dominate these topics.`
-    : strongCount>=7
-    ? `✅  Strong topical coverage across ${strongCount} practice areas — solid foundation for authority.`
-    : `📈  Mixed coverage — ${strongCount} strong areas, ${gapCount} gaps. New content pages will close gaps fast.`;
-  s7.addShape(pres.shapes.RECTANGLE,{x:3.2,y:5.42,w:6.4,h:0.4,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
-  s7.addText(insightTxt,{x:3.35,y:5.44,w:6.1,h:0.36,fontSize:9,color:C.white,fontFace:"Calibri",valign:"middle"});
+  const totalIssues = (SF.titlesOver60||0)+(SF.metaDuplicate||0)+(SF.lowContentPages||0)+(SF.errors4xx||0)+(SF.missingCanonical||0);
+  const sfInsight = !hasSF
+    ? "Upload a Screaming Frog Crawl Overview CSV for detailed content analysis."
+    : totalIssues === 0
+    ? `✅  No critical content issues detected across ${SF.htmlPages||0} HTML pages.`
+    : `⚠️  ${totalIssues} content issues across ${SF.htmlPages||0} pages — ${SF.lowContentPages||0} thin pages and ${SF.metaDuplicate||0} duplicate meta descriptions are the priority.`;
+  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:5.42,w:9.2,h:0.4,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
+  s7.addText(sfInsight,{x:0.55,y:5.44,w:8.9,h:0.36,fontSize:9,color:C.white,fontFace:"Calibri",valign:"middle"});
   footer(s7,D);
 
   // S8 PRIORITY RECOMMENDATIONS
@@ -939,7 +956,7 @@ app.post("/generate", upload.fields([
       // BrightLocal citation audit
       if (data.domain && BRIGHTLOCAL_KEY && (data.citationsFound === undefined || data.citationsFound === null || data.citationsFound === "")) {
         console.log(`[${jobId}] Running BrightLocal audit...`);
-        Object.assign(data, await brightlocalCitationAudit(data.domain, data.clientName, data.location));
+        Object.assign(data, await brightlocalCitationAudit(data.domain, data.clientName, data.location, data.brightlocalReportId, data.brightlocalLocationId));
       }
 
       // Claude narrative
