@@ -549,8 +549,12 @@ app.post("/generate", upload.fields([
       data.competitors = comps;
     }
 
-    // BrightLocal runs async in background — see /generate-brightlocal route
-    // citationsFound and napConsistency come from manual fields or background job
+    // Auto-fetch BrightLocal citation data (runs synchronously — takes ~60-90s)
+    if (data.domain && BRIGHTLOCAL_KEY && !data.citationsFound) {
+      console.log("Running BrightLocal audit...");
+      const bl = await brightlocalCitationAudit(data.domain, data.clientName, data.location);
+      Object.assign(data, bl);
+    }
 
     // Get Claude narrative
     const narrative = await getNarrative(data);
