@@ -183,10 +183,11 @@
   <div class="card">
     <div class="card-header gray">MAJESTIC SEO — Upload CSV Export</div>
     <div class="card-body">
-      <p style="font-size:12px;color:#6B7A8D;margin-bottom:12px;">In Majestic, go to the domain summary and export the report as CSV. Upload it here — Trust Flow, Citation Flow, Referring Domains and Backlinks will be read automatically.</p>
+      <p style="font-size:12px;color:#6B7A8D;margin-bottom:12px;">Upload either a <strong>Summary export</strong> (single domain) or a <strong>Comparison export</strong> (client + competitors). Comparison is recommended — it adds competitor backlink data to the Local SEO slide automatically.</p>
+      <p style="font-size:11px;color:#009ABF;margin-bottom:10px;">In Majestic → Comparison tab → enter client + 2 competitor domains → Compare → Export CSV</p>
       <div class="upload-area" id="uploadArea" onclick="document.getElementById('majesticFile').click()">
         <input type="file" id="majesticFile" accept=".csv" style="display:none" onchange="handleFileSelect(this)">
-        <p class="upload-label"><strong>Click to upload Majestic CSV</strong><br>or drag and drop here</p>
+        <p class="upload-label"><strong>Click to upload Majestic CSV</strong><br>Summary or Comparison export — both supported</p>
         <p id="fileName" style="font-size:12px;color:#00684F;margin-top:6px;display:none;"></p>
       </div>
     </div>
