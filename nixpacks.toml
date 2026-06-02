@@ -1,8 +1,0 @@
-[phases.setup]
-nixPkgs = ["fontconfig", "freetype", "liberation_ttf", "dejavu_fonts"]
-
-[phases.build]
-cmds = ["npm install", "fc-cache -fv"]
-
-[start]
-cmd = "node server.js"
