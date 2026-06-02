@@ -124,8 +124,8 @@ async function brightlocalCitationAudit(domain, businessName, location) {
     const BASE    = "https://tools.brightlocal.com/seo-tools/api";
     const key     = BRIGHTLOCAL_KEY;
     // Known report ID — from form or environment variable fallback
-    const REPORT_ID   = data.brightlocalReportId || process.env.BRIGHTLOCAL_REPORT_ID  || "";
-    const LOCATION_ID = process.env.BRIGHTLOCAL_LOCATION_ID || "";
+    const REPORT_ID   = data.brightlocalReportId || "";
+    const LOCATION_ID = "";
 
     if (!REPORT_ID) {
       console.log("BrightLocal: no report ID provided — skipping.");
@@ -657,8 +657,8 @@ app.get("/debug", (req, res) => {
     semrush_key_prefix:     SEMRUSH_KEY ? SEMRUSH_KEY.slice(0,6)+"..." : "NOT SET",
     semrush_project:        SEMRUSH_PROJECT,
     brightlocal_key_set:    !!BRIGHTLOCAL_KEY,
-    brightlocal_report_id:  process.env.BRIGHTLOCAL_REPORT_ID  || "NOT SET",
-    brightlocal_location_id:process.env.BRIGHTLOCAL_LOCATION_ID|| "NOT SET",
+    brightlocal_report_id:  data?.brightlocalReportId || "comes from form only",
+    brightlocal_location_id:"comes from form only",
     anthropic_key_set:      !!ANTHROPIC_KEY,
     pagespeed_key_set:      !!PAGESPEED_KEY,
     node_version:           process.version,
