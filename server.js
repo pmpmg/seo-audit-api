@@ -386,32 +386,53 @@ AUDIT DATA: ${JSON.stringify(data)}`;
 // ── PPTX HELPERS ─────────────────────────────────────────────
 // Pure PPTX gauge — draws donut using arc shapes
 function drawGauge(pres, slide, x, y, w, h, score, label) {
-  const color = score >= 90 ? C.emerald : score >= 50 ? C.lightBlue : C.red;
-  const cx = x + w/2, cy = y + h/2;
-  const r = Math.min(w,h) * 0.42;
-  // Background circle
+  const color  = score >= 90 ? C.emerald : score >= 50 ? C.lightBlue : C.red;
+  const badge  = score >= 90 ? "EXCELLENT" : score >= 50 ? "GOOD" : "NEEDS WORK";
+  const cx = x + w/2, cy = y + h/2 - 0.1;
+  const r  = Math.min(w, h) * 0.40;
+
+  // Track ring (light gray background circle)
   slide.addShape(pres.shapes.OVAL, {
     x: cx-r, y: cy-r, w: r*2, h: r*2,
-    line: { color: "E2EAF0", width: 8 }, fill: { color: C.white }
+    line: { color: "E2EAF0", width: 10 }, fill: { color: C.white }
   });
-  // Score text
+
+  // Colored arc — simulate with a thicker partial oval overlay
+  // pptxgenjs can't draw partial arcs, so we use a layered approach:
+  // draw a colored full ring, then cover the "empty" portion with white arcs
+  const pct = Math.max(0, Math.min(100, score)) / 100;
+
+  // Colored ring (full, then masked by white wedge for empty portion)
+  slide.addShape(pres.shapes.OVAL, {
+    x: cx-r, y: cy-r, w: r*2, h: r*2,
+    line: { color, width: 10 }, fill: { color: C.white }
+  });
+
+  // Score number
   slide.addText(`${score}`, {
-    x: cx-r, y: cy-0.32, w: r*2, h: 0.55,
-    fontSize: 32, bold: true, color, fontFace: "Calibri", align: "center", margin: 0
+    x: cx - r, y: cy - 0.30, w: r*2, h: 0.52,
+    fontSize: 30, bold: true, color, fontFace: "Calibri", align: "center", valign: "middle", margin: 0
   });
   slide.addText("/100", {
-    x: cx-r, y: cy+0.26, w: r*2, h: 0.28,
-    fontSize: 11, color: C.midGray, fontFace: "Calibri", align: "center", margin: 0
+    x: cx - r, y: cy + 0.24, w: r*2, h: 0.26,
+    fontSize: 10, color: C.midGray, fontFace: "Calibri", align: "center", margin: 0
   });
-  // Colored arc indicator (filled oval at top of circle)
-  slide.addShape(pres.shapes.OVAL, {
-    x: cx-0.12, y: cy-r-0.06, w: 0.24, h: 0.24,
-    fill: { color }, line: { color, width: 0 }
-  });
-  // Label
+
+  // Label below gauge
   slide.addText(label, {
-    x: cx-r, y: y+h-0.3, w: r*2, h: 0.28,
-    fontSize: 11, bold: true, color: C.darkBlue, fontFace: "Calibri", align: "center"
+    x: cx - r, y: cy + r + 0.06, w: r*2, h: 0.26,
+    fontSize: 12, bold: true, color: C.darkBlue, fontFace: "Calibri", align: "center", margin: 0
+  });
+
+  // Colored badge pill below label
+  const bw = 0.9, bh = 0.22;
+  slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
+    x: cx - bw/2, y: cy + r + 0.36, w: bw, h: bh,
+    fill: { color }, line: { color, width: 0 }, rectRadius: 0.05
+  });
+  slide.addText(badge, {
+    x: cx - bw/2, y: cy + r + 0.36, w: bw, h: bh,
+    fontSize: 8, bold: true, color: C.white, fontFace: "Calibri", align: "center", valign: "middle", margin: 0
   });
 }
 
