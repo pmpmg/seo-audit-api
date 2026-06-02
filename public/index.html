@@ -41,19 +41,12 @@
   .status.working{background:#EEF7FF;color:#12284C;display:block;}
   .status.success{background:#E8F8F2;color:#00684F;display:block;}
   .status.error{background:#FEE2E2;color:#C0392B;display:block;}
-  .progress{width:100%;height:6px;background:#E2EAF0;border-radius:3px;margin-top:12px;overflow:hidden;display:none;}
-  .progress-bar{height:100%;background:#009ABF;border-radius:3px;transition:width .8s ease;}
-  .steps{display:none;background:white;border-radius:8px;padding:16px 20px;margin-top:12px;box-shadow:0 2px 8px rgba(0,0,0,0.07);}
-  .step{display:flex;align-items:flex-start;gap:12px;padding:8px 0;border-bottom:1px solid #F4F7FA;}
-  .step:last-child{border-bottom:none;}
-  .step-icon{font-size:16px;min-width:20px;margin-top:1px;}
-  .step-text{flex:1;}
-  .step-title{font-size:13px;font-weight:bold;color:#12284C;}
-  .step-sub{font-size:11px;color:#8A9BB0;margin-top:2px;}
-  .step.pending .step-icon::before{content:"○";}
-  .step.active  .step-icon::before{content:"⏳";}
-  .step.done    .step-icon::before{content:"✅";}
-  .step.done .step-title{color:#00684F;}
+  .progress-wrap{display:none;margin-top:16px;}
+  .progress-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .progress-label{font-size:12px;color:#6B7A8D;}
+  .progress-timer{font-size:13px;font-weight:bold;color:#12284C;}
+  .progress-track{width:100%;height:8px;background:#E2EAF0;border-radius:4px;overflow:hidden;}
+  .progress-fill{height:100%;background:#009ABF;border-radius:4px;width:0%;transition:width .6s ease;}
   .legend{font-size:11px;color:#8A9BB0;margin-top:8px;text-align:center;}
   @media(max-width:600px){.field-row{grid-template-columns:1fr;}.field-source{display:none;}}
 </style>
@@ -211,44 +204,13 @@
 
   <!-- GENERATE -->
   <button class="generate-btn" id="generateBtn" onclick="generate()">▶ &nbsp; GENERATE DECK</button>
-  <div class="progress" id="progressBar"><div class="progress-bar" id="progressFill" style="width:0%"></div></div>
 
-  <div class="steps" id="stepsPanel">
-    <div class="step pending" id="step1">
-      <div class="step-icon"></div>
-      <div class="step-text">
-        <div class="step-title">Fetching Google PageSpeed</div>
-        <div class="step-sub">Mobile & desktop scores, Core Web Vitals</div>
-      </div>
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-meta">
+      <span class="progress-label" id="progressLabel">Generating your deck...</span>
+      <span class="progress-timer" id="progressTimer">0:00</span>
     </div>
-    <div class="step pending" id="step2">
-      <div class="step-icon"></div>
-      <div class="step-text">
-        <div class="step-title">Pulling SEMrush competitor data</div>
-        <div class="step-sub">Top organic competitors in your market</div>
-      </div>
-    </div>
-    <div class="step pending" id="step3">
-      <div class="step-icon"></div>
-      <div class="step-text">
-        <div class="step-title">Processing uploaded data</div>
-        <div class="step-sub">Majestic & Screaming Frog CSV files</div>
-      </div>
-    </div>
-    <div class="step pending" id="step4">
-      <div class="step-icon"></div>
-      <div class="step-text">
-        <div class="step-title">Generating AI audit narrative</div>
-        <div class="step-sub">Plain-language findings & recommendations</div>
-      </div>
-    </div>
-    <div class="step pending" id="step5">
-      <div class="step-icon"></div>
-      <div class="step-text">
-        <div class="step-title">Building PowerPoint deck</div>
-        <div class="step-sub">8 slides with PMP branding</div>
-      </div>
-    </div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
   </div>
 
   <div id="status" class="status"></div>
@@ -309,56 +271,43 @@ sfUploadArea.addEventListener('drop', e => {
   }
 });
 
-// Step timing (ms from start)
-const STEP_TIMES = [
-  { id:'step1', start:500,   end:18000 },  // PageSpeed ~15s
-  { id:'step2', start:2000,  end:22000 },  // SEMrush competitors
-  { id:'step3', start:500,   end:3000  },  // CSV parsing (instant)
-  { id:'step4', start:22000, end:35000 },  // Claude narrative
-  { id:'step5', start:35000, end:55000 },  // PPTX build
-];
-
-function setStep(id, state) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.className = 'step ' + state;
-}
-
-function resetSteps() {
-  STEP_TIMES.forEach(s => setStep(s.id, 'pending'));
-  document.getElementById('stepsPanel').style.display = 'none';
-  document.getElementById('progressBar').style.display = 'none';
-  document.getElementById('progressFill').style.width = '0%';
-}
+// Total estimated duration in ms (~2.5 mins with BrightLocal)
+const TOTAL_MS = 150000;
+let _barInterval = null, _timerInterval = null, _startTime = null;
 
 function startProgressAnimation() {
-  document.getElementById('stepsPanel').style.display = 'block';
-  document.getElementById('progressBar').style.display = 'block';
-  const start = Date.now();
-  const totalMs = 58000;
+  _startTime = Date.now();
+  document.getElementById('progressWrap').style.display = 'block';
+  document.getElementById('progressFill').style.width = '0%';
 
-  // Animate progress bar
-  const barInterval = setInterval(() => {
-    const elapsed = Date.now() - start;
-    const pct = Math.min(95, (elapsed / totalMs) * 100);
+  // Progress bar — eases toward 95% over TOTAL_MS, never reaches 100 until done
+  _barInterval = setInterval(() => {
+    const elapsed = Date.now() - _startTime;
+    const pct = Math.min(95, (elapsed / TOTAL_MS) * 100);
     document.getElementById('progressFill').style.width = pct + '%';
-  }, 200);
+  }, 300);
 
-  // Animate steps
-  const timers = STEP_TIMES.map(s => {
-    const t1 = setTimeout(() => setStep(s.id, 'active'), s.start);
-    const t2 = setTimeout(() => setStep(s.id, 'done'),  s.end);
-    return [t1, t2];
-  });
-
-  return { barInterval, timers, start };
+  // Timer counting up
+  _timerInterval = setInterval(() => {
+    const secs = Math.floor((Date.now() - _startTime) / 1000);
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    document.getElementById('progressTimer').textContent = m + ':' + (s < 10 ? '0' : '') + s;
+  }, 500);
 }
 
-function finishProgress(anim) {
-  clearInterval(anim.barInterval);
-  anim.timers.forEach(([t1,t2]) => { clearTimeout(t1); clearTimeout(t2); });
-  STEP_TIMES.forEach(s => setStep(s.id, 'done'));
+function finishProgress() {
+  clearInterval(_barInterval);
+  clearInterval(_timerInterval);
   document.getElementById('progressFill').style.width = '100%';
+}
+
+function resetProgress() {
+  clearInterval(_barInterval);
+  clearInterval(_timerInterval);
+  document.getElementById('progressWrap').style.display = 'none';
+  document.getElementById('progressFill').style.width = '0%';
+  document.getElementById('progressTimer').textContent = '0:00';
 }
 
 async function generate() {
@@ -385,8 +334,8 @@ async function generate() {
   const btn = document.getElementById('generateBtn');
   btn.disabled = true;
   btn.textContent = '⏳  Generating...';
-  resetSteps();
-  const anim = startProgressAnimation();
+  resetProgress();
+  startProgressAnimation();
 
   const formData = new FormData();
   formData.append('data', JSON.stringify(data));
@@ -403,7 +352,7 @@ async function generate() {
 
     const { pptxBase64, fileName } = await res.json();
 
-    finishProgress(anim);
+    finishProgress();
 
     const binary = atob(pptxBase64);
     const bytes  = new Uint8Array(binary.length);
@@ -417,7 +366,7 @@ async function generate() {
     showStatus('success',`✅ Done! "${fileName}" is downloading now.`);
 
   } catch(err) {
-    finishProgress(anim);
+    finishProgress();
     showStatus('error','❌ Something went wrong: ' + err.message);
   } finally {
     btn.disabled = false;
