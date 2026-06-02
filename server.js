@@ -416,8 +416,8 @@ function drawGauge(pres, slide, x, y, w, h, score, label) {
 }
 
 // Simple icon substitutes using colored text/shapes
-function drawCheckIcon(slide, x, y, color) {
-  slide.addShape("oval", { x, y, w:0.46, h:0.46, fill:{color:C.emerald}, line:{color:C.emerald,width:0} });
+function drawCheckIcon(pres, slide, x, y) {
+  slide.addShape(pres.shapes.OVAL, { x, y, w:0.46, h:0.46, fill:{color:C.emerald}, line:{color:C.emerald,width:0} });
   slide.addText("✓", { x:x+0.01, y:y+0.05, w:0.44, h:0.38, fontSize:13, bold:true, color:C.white, fontFace:"Calibri", align:"center", valign:"middle" });
 }
 
@@ -483,7 +483,7 @@ async function buildPptx(data, narrative) {
     const col=i%3,row=Math.floor(i/3),x=0.4+col*3.1,y=1.9+row*1.55;
     s3.addShape(pres.shapes.RECTANGLE,{x,y,w:2.9,h:1.35,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
     s3.addShape(pres.shapes.RECTANGLE,{x,y,w:2.9,h:0.05,fill:{color:C.emerald},line:{color:C.emerald,width:0}});
-    drawCheckIcon(s3, x+0.18, y+0.18);
+    drawCheckIcon(pres,s3, x+0.18, y+0.18);
     s3.addText(wins[i]?.title||"",{x:x+0.82,y:y+0.18,w:1.95,h:0.32,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
     s3.addText(wins[i]?.sub||"",  {x:x+0.82,y:y+0.52,w:1.95,h:0.55,fontSize:9,color:C.midGray,fontFace:"Calibri",margin:0});
   }
@@ -724,7 +724,9 @@ app.post("/generate", upload.fields([
         const auditData = await semrushSiteAuditData(projectId);
         // Only fill in fields not already provided by staff
         Object.keys(auditData).forEach(k => {
-          if (!data[k] || data[k] === 0) data[k] = auditData[k];
+          if (data[k] === undefined || data[k] === null || data[k] === 0 || data[k] === "" || data[k] === "0") {
+            data[k] = auditData[k];
+          }
         });
       }
 
@@ -741,7 +743,7 @@ app.post("/generate", upload.fields([
       }
 
       // BrightLocal citation audit
-      if (data.domain && BRIGHTLOCAL_KEY && !data.citationsFound) {
+      if (data.domain && BRIGHTLOCAL_KEY && (data.citationsFound === undefined || data.citationsFound === null || data.citationsFound === "")) {
         console.log(`[${jobId}] Running BrightLocal audit...`);
         Object.assign(data, await brightlocalCitationAudit(data.domain, data.clientName, data.location));
       }
@@ -829,14 +831,14 @@ app.get("/download/:id", (req, res) => {
   const buf = jobBuffers.get(req.params.id);
   if (!job || job.status !== "done" || !buf) return res.status(404).json({ error: "Not found" });
   const fileName = job.result.fileName || "SEO-Audit.pptx";
+  // ASCII fallback (strips special chars) + UTF-8 encoded full name
+  const asciiFallback = fileName.replace(/[^ -~]/g, "-").replace(/"/g, "");
+  const utf8Encoded   = encodeURIComponent(fileName);
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
-  const safeFileName = encodeURIComponent(fileName);
-  res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${safeFileName}`);
+  res.setHeader("Content-Disposition", `attachment; filename="${asciiFallback}"; filename*=UTF-8''${utf8Encoded}`);
   res.setHeader("Content-Length", buf.length);
   res.end(buf);
 });
-
-app.get("/", (req,res) => res.sendFile(path.join(__dirname,"public","index.html")));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`SEO Audit API v3 running on port ${PORT}`));
