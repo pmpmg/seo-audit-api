@@ -35,6 +35,9 @@ function setJobDone(id, result)  { const j=jobs.get(id); if(j){ j.status='done';
 function setJobError(id, error)  { const j=jobs.get(id); if(j){ j.status='error'; j.error=error;   } }
 function getJob(id)              { return jobs.get(id) || null; }
 
+// Store raw PPTX buffers separately for direct binary streaming
+const jobBuffers = new Map();
+
 // ── COLORS ───────────────────────────────────────────────────
 const C = {
   darkBlue:"12284C", lightBlue:"009ABF", emerald:"00684F",
@@ -642,7 +645,7 @@ async function buildPptx(data, narrative) {
   });
   s8.addText(`${D.preparedBy}   ·   ${D.domain}   ·   ${D.date||""}`,{x:0.5,y:5.15,w:9,h:0.25,fontSize:8,color:"3A6080",fontFace:"Calibri"});
 
-  return await pres.write({outputType:"base64"});
+  return await pres.write({outputType:"nodebuffer"});
 }
 
 // ── ROUTES ────────────────────────────────────────────────────
@@ -736,11 +739,13 @@ app.post("/generate", upload.fields([
 
       // Build PPTX
       console.log(`[${jobId}] Building PPTX...`);
-      const pptxBase64 = await buildPptx(data, narrative);
+      const pptxBuffer = await buildPptx(data, narrative);
       const date       = data.date || new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"});
       const fileName   = `SEO Audit — ${data.clientName} — ${date}.pptx`;
 
-      setJobDone(jobId, { pptxBase64, fileName });
+      jobBuffers.set(jobId, pptxBuffer);
+      setTimeout(() => jobBuffers.delete(jobId), 30 * 60 * 1000); // clean up after 30 min
+      setJobDone(jobId, { fileName });
       console.log(`[${jobId}] Done.`);
 
     } catch(err) {
@@ -754,9 +759,21 @@ app.post("/generate", upload.fields([
 app.get("/job/:id", (req, res) => {
   const job = getJob(req.params.id);
   if (!job) return res.status(404).json({ status: "not_found" });
-  if (job.status === "done")  return res.json({ status: "done",  ...job.result });
+  if (job.status === "done")  return res.json({ status: "done",  fileName: job.result.fileName });
   if (job.status === "error") return res.json({ status: "error", error: job.error });
   res.json({ status: "pending" });
+});
+
+// GET /download/:id — stream the PPTX binary directly (no base64)
+app.get("/download/:id", (req, res) => {
+  const job = getJob(req.params.id);
+  const buf = jobBuffers.get(req.params.id);
+  if (!job || job.status !== "done" || !buf) return res.status(404).json({ error: "Not found" });
+  const fileName = job.result.fileName || "SEO-Audit.pptx";
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.setHeader("Content-Length", buf.length);
+  res.end(buf);
 });
 
 app.get("/", (req,res) => res.sendFile(path.join(__dirname,"public","index.html")));
