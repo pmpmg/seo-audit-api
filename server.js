@@ -129,12 +129,12 @@ async function brightlocalCitationAudit(domain, businessName, location) {
     // If no report ID but location ID given, auto-lookup latest report
     if (!REPORT_ID && data.brightlocalLocationId) {
       try {
-        const lookupRes = await fetch(`${BASE}/v4/lscu?api-key=${key}&location-id=${data.brightlocalLocationId}`);
+        const lookupRes = await fetch(`${BASE}/v2/ct/get-all?api-key=${key}&location-id=${data.brightlocalLocationId}`);
         const lookupData = await lookupRes.json();
-        const reports = lookupData.response?.reports || lookupData.reports || lookupData["lscu-reports"] || [];
+        const reports = lookupData.response?.results || [];
         if (reports.length) {
-          const latest = reports.sort((a,b) => new Date(b["date-created"]||0) - new Date(a["date-created"]||0))[0];
-          REPORT_ID = String(latest["report-id"] || latest.id || latest["lscu-id"] || "");
+          const latest = reports.sort((a,b) => new Date(b.last_run||0) - new Date(a.last_run||0))[0];
+          REPORT_ID = String(latest.report_id || latest["report-id"] || "");
           console.log("BrightLocal: auto-resolved report ID from location:", REPORT_ID);
         }
       } catch(e) { console.error("BrightLocal auto-lookup error:", e.message); }
@@ -776,18 +776,17 @@ app.get("/brightlocal-reports", async (req, res) => {
   if (!BRIGHTLOCAL_KEY) return res.status(500).json({ error: "BrightLocal API key not configured" });
   try {
     const BASE = "https://tools.brightlocal.com/seo-tools/api";
-    // Fetch all citation tracker reports for this location
-    const r = await fetch(`${BASE}/v4/lscu?api-key=${BRIGHTLOCAL_KEY}&location-id=${locationId}`);
+    // Correct endpoint: GET /v2/ct/get-all with optional location-id filter
+    const r = await fetch(`${BASE}/v2/ct/get-all?api-key=${BRIGHTLOCAL_KEY}&location-id=${locationId}`);
     const d = await r.json();
-    console.log("BrightLocal reports lookup:", JSON.stringify(d).slice(0, 400));
-    // Response contains array of reports — find the most recent completed one
-    const reports = d.response?.reports || d.reports || d["lscu-reports"] || [];
-    if (!reports.length) return res.status(404).json({ error: "No reports found for this location" });
-    // Sort by date descending and return the latest
-    const latest = reports.sort((a, b) => new Date(b["date-created"] || b.date || 0) - new Date(a["date-created"] || a.date || 0))[0];
-    const reportId = latest["report-id"] || latest.id || latest["lscu-id"];
-    const reportName = latest["report-name"] || latest.name || "";
-    const lastRun = latest["last-run"] || latest["date-created"] || "";
+    console.log("BrightLocal ct/get-all response:", JSON.stringify(d).slice(0, 400));
+    const reports = d.response?.results || [];
+    if (!reports.length) return res.status(404).json({ error: "No Citation Tracker reports found for this location" });
+    // Sort by last_run descending, pick most recent
+    const latest = reports.sort((a, b) => new Date(b.last_run || 0) - new Date(a.last_run || 0))[0];
+    const reportId = latest.report_id || latest["report-id"];
+    const reportName = latest.report_name || latest["report-name"] || "";
+    const lastRun = latest.last_run || "";
     res.json({ reportId, reportName, lastRun });
   } catch(e) {
     console.error("BrightLocal reports lookup error:", e.message);
