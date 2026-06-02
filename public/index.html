@@ -12,29 +12,29 @@
   header p{color:#7ABCD4;font-size:13px;margin-top:4px;}
   .container{max-width:860px;margin:32px auto;padding:0 20px 80px;}
   .card{background:white;border-radius:8px;margin-bottom:18px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.07);}
-  .card-header{padding:11px 20px;font-size:10px;font-weight:bold;letter-spacing:3px;color:white;}
+  .card-header{padding:11px 20px;font-size:13px;font-weight:bold;letter-spacing:3px;color:white;}
   .navy{background:#12284C;} .blue{background:#009ABF;} .red{background:#C0392B;} .gold{background:#C8972A;} .green{background:#00684F;} .gray{background:#6B7A8D;}
   .card-body{padding:14px 20px;}
-  .auto-badge{display:inline-block;background:#E8F8F2;color:#00684F;font-size:9px;font-weight:bold;padding:2px 7px;border-radius:10px;letter-spacing:1px;margin-left:8px;vertical-align:middle;}
+  .auto-badge{display:inline-block;background:#E8F8F2;color:#00684F;font-size:11px;font-weight:bold;padding:2px 7px;border-radius:10px;letter-spacing:1px;margin-left:8px;vertical-align:middle;}
   .field-row{display:grid;grid-template-columns:230px 1fr 170px;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid #F4F7FA;}
   .field-row:last-child{border-bottom:none;}
-  .field-label{font-size:13px;color:#12284C;}
+  .field-label{font-size:15px;color:#12284C;}
   .field-label.req{font-weight:bold;}
   .field-label.req::before{content:"* ";color:#C0392B;}
   .field-label.bold{font-weight:bold;}
-  .field-source{font-size:10px;color:#8A9BB0;font-style:italic;}
-  input[type=text],input[type=number]{width:100%;padding:7px 10px;border:1.5px solid #D0D8E4;border-radius:4px;font-size:13px;background:#EEF2F7;color:#0D1B2A;transition:border-color .2s;}
+  .field-source{font-size:13px;color:#8A9BB0;font-style:italic;}
+  input[type=text],input[type=number]{width:100%;padding:7px 10px;border:1.5px solid #D0D8E4;border-radius:4px;font-size:15px;background:#EEF2F7;color:#0D1B2A;transition:border-color .2s;}
   input:focus{outline:none;border-color:#009ABF;background:white;}
   input.error{border-color:#C0392B;}
   .upload-area{border:2px dashed #D0D8E4;border-radius:6px;padding:16px;text-align:center;cursor:pointer;background:#F4F7FA;transition:border-color .2s;}
   .upload-area:hover{border-color:#009ABF;}
   .upload-area.has-file{border-color:#00684F;background:#E8F8F2;}
-  .upload-label{font-size:12px;color:#6B7A8D;}
+  .upload-label{font-size:14px;color:#6B7A8D;}
   .upload-label strong{color:#12284C;}
   .auto-section{background:#EEF7FF;border:1.5px solid #B8D8EE;border-radius:6px;padding:12px 16px;margin-bottom:4px;}
-  .auto-section p{font-size:12px;color:#12284C;}
+  .auto-section p{font-size:14px;color:#12284C;}
   .auto-section .auto-items{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
-  .auto-item{background:white;border:1px solid #D0D8E4;border-radius:4px;padding:4px 10px;font-size:11px;color:#00684F;font-weight:bold;}
+  .auto-item{background:white;border:1px solid #D0D8E4;border-radius:4px;padding:4px 10px;font-size:13px;color:#00684F;font-weight:bold;}
   .generate-btn{width:100%;padding:18px;background:#009ABF;color:white;border:none;border-radius:8px;font-size:16px;font-weight:bold;cursor:pointer;letter-spacing:1px;transition:background .2s;margin-top:8px;}
   .generate-btn:hover{background:#007a9a;}
   .generate-btn:disabled{background:#8A9BB0;cursor:not-allowed;}
@@ -44,11 +44,11 @@
   .status.error{background:#FEE2E2;color:#C0392B;display:block;}
   .progress-wrap{display:none;margin-top:16px;}
   .progress-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
-  .progress-label{font-size:12px;color:#6B7A8D;}
+  .progress-label{font-size:14px;color:#6B7A8D;}
   .progress-timer{font-size:13px;font-weight:bold;color:#12284C;}
   .progress-track{width:100%;height:8px;background:#E2EAF0;border-radius:4px;overflow:hidden;}
   .progress-fill{height:100%;background:#009ABF;border-radius:4px;width:0%;transition:width .6s ease;}
-  .legend{font-size:11px;color:#8A9BB0;margin-top:8px;text-align:center;}
+  .legend{font-size:13px;color:#8A9BB0;margin-top:8px;text-align:center;}
   .redownload-wrap{display:none;margin-top:12px;text-align:center;}
   .redownload-btn{display:inline-block;padding:10px 24px;background:#12284C;color:white;border:none;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;letter-spacing:.5px;}
   .redownload-btn:hover{background:#1a3a6a;}
@@ -109,7 +109,7 @@
         <span class="field-source">SEMrush → Projects → open client → copy number from URL</span>
       </div>
       <div style="padding:0 0 6px 0;margin-top:-4px;">
-        <p style="font-size:11px;color:#8A9BB0;font-style:italic;">
+        <p style="font-size:13px;color:#8A9BB0;font-style:italic;">
           In SEMrush go to <strong>Projects</strong>, click the client's project, then look at the browser URL — it will show <strong>/projects/XXXXXXXX/</strong> — copy that number here.
         </p>
       </div>
@@ -119,7 +119,7 @@
         <span class="field-source">BrightLocal → Citation Tracker → copy from URL</span>
       </div>
       <div style="padding:0 0 6px 0;margin-top:-4px;">
-        <p style="font-size:11px;color:#8A9BB0;font-style:italic;">
+        <p style="font-size:13px;color:#8A9BB0;font-style:italic;">
           In BrightLocal go to <strong>Citation Tracker</strong>, open the client's report, then look at the browser URL — it will show <strong>/location/XXXXXXX/ct/status?reportId=XXXXXXX</strong> — copy the number after <strong>reportId=</strong>.
         </p>
       </div>
@@ -130,7 +130,7 @@
   <div class="card">
     <div class="card-header blue">SEMRUSH SITE AUDIT <span class="auto-badge">AUTO-FETCHED</span></div>
     <div class="card-body">
-      <p style="font-size:12px;color:#009ABF;padding:0 0 8px 0;">All fields below auto-populate from your SEMrush campaign. Override any field if needed.</p>
+      <p style="font-size:14px;color:#009ABF;padding:0 0 8px 0;">All fields below auto-populate from your SEMrush campaign. Override any field if needed.</p>
       <div class="field-row">
         <span class="field-label">Pages Crawled</span>
         <input type="number" id="pagesCrawled" placeholder="Total pages in audit">
@@ -183,8 +183,8 @@
   <div class="card">
     <div class="card-header green">BRIGHTLOCAL <span class="auto-badge">AUTO-FETCHED</span></div>
     <div class="card-body">
-      <p style="font-size:12px;color:#00684F;padding:8px 0;">Citation audit runs automatically using your saved BrightLocal report. Override below if needed.</p>
-      <p style="font-size:12px;color:#6B7A8D;padding:4px 0 10px;">In BrightLocal go to <strong>Citation Tracker</strong>, open the client's report, then look at the browser URL — it will show <strong>/location/<em>XXXXXXX</em>/ct/status?reportId=<em>XXXXXXX</em></strong> — the report ID is the number after <strong>reportId=</strong>.</p>
+      <p style="font-size:14px;color:#00684F;padding:8px 0;">Citation audit runs automatically using your saved BrightLocal report. Override below if needed.</p>
+      <p style="font-size:14px;color:#6B7A8D;padding:4px 0 10px;">In BrightLocal go to <strong>Citation Tracker</strong>, open the client's report, then look at the browser URL — it will show <strong>/location/<em>XXXXXXX</em>/ct/status?reportId=<em>XXXXXXX</em></strong> — the report ID is the number after <strong>reportId=</strong>.</p>
       <div class="field-row">
         <span class="field-label">Citations Found</span>
         <input type="number" id="citationsFound" placeholder="Auto-populated">
@@ -207,12 +207,12 @@
   <div class="card">
     <div class="card-header gray">MAJESTIC SEO — Upload CSV Export</div>
     <div class="card-body">
-      <p style="font-size:12px;color:#6B7A8D;margin-bottom:12px;">Upload either a <strong>Summary export</strong> (single domain) or a <strong>Comparison export</strong> (client + competitors). Comparison is recommended — it adds competitor backlink data to the Local SEO slide automatically.</p>
-      <p style="font-size:11px;color:#009ABF;margin-bottom:10px;">In Majestic → Comparison tab → enter client + 2 competitor domains → Compare → Export CSV</p>
+      <p style="font-size:14px;color:#6B7A8D;margin-bottom:12px;">Upload either a <strong>Summary export</strong> (single domain) or a <strong>Comparison export</strong> (client + competitors). Comparison is recommended — it adds competitor backlink data to the Local SEO slide automatically.</p>
+      <p style="font-size:13px;color:#009ABF;margin-bottom:10px;">In Majestic → Comparison tab → enter client + 2 competitor domains → Compare → Export CSV</p>
       <div class="upload-area" id="uploadArea" onclick="document.getElementById('majesticFile').click()">
         <input type="file" id="majesticFile" accept=".csv" style="display:none" onchange="handleFileSelect(this)">
         <p class="upload-label"><strong>Click to upload Majestic CSV</strong><br>Summary or Comparison export — both supported</p>
-        <p id="fileName" style="font-size:12px;color:#00684F;margin-top:6px;display:none;"></p>
+        <p id="fileName" style="font-size:14px;color:#00684F;margin-top:6px;display:none;"></p>
       </div>
     </div>
   </div>
@@ -221,11 +221,11 @@
   <div class="card">
     <div class="card-header blue">SCREAMING FROG — Upload Crawl Overview CSV</div>
     <div class="card-body">
-      <p style="font-size:12px;color:#6B7A8D;margin-bottom:12px;">In Screaming Frog Desktop, after running a crawl go to <strong>Reports → Crawl Overview → Export</strong>. Upload the CSV here — redirect chains, canonical issues, page depth and response times will be read automatically.</p>
+      <p style="font-size:14px;color:#6B7A8D;margin-bottom:12px;">In Screaming Frog Desktop, after running a crawl go to <strong>Reports → Crawl Overview → Export</strong>. Upload the CSV here — redirect chains, canonical issues, page depth and response times will be read automatically.</p>
       <div class="upload-area" id="sfUploadArea" onclick="document.getElementById('sfFile').click()">
         <input type="file" id="sfFile" accept=".csv" style="display:none" onchange="handleSfFileSelect(this)">
         <p class="upload-label"><strong>Click to upload Screaming Frog Crawl Overview CSV</strong><br>or drag and drop here</p>
-        <p id="sfFileName" style="font-size:12px;color:#00684F;margin-top:6px;display:none;"></p>
+        <p id="sfFileName" style="font-size:14px;color:#00684F;margin-top:6px;display:none;"></p>
       </div>
     </div>
   </div>
