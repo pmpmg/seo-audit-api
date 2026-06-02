@@ -16,9 +16,10 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 // ── ENV ──────────────────────────────────────────────────────
-const SEMRUSH_KEY    = process.env.SEMRUSH_API_KEY    || "";
-const BRIGHTLOCAL_KEY= process.env.BRIGHTLOCAL_API_KEY|| "";
-const ANTHROPIC_KEY  = process.env.ANTHROPIC_API_KEY  || "";
+const SEMRUSH_KEY     = process.env.SEMRUSH_API_KEY     || "";
+const SEMRUSH_PROJECT = process.env.SEMRUSH_PROJECT_ID  || "6093881";
+const BRIGHTLOCAL_KEY = process.env.BRIGHTLOCAL_API_KEY || "";
+const ANTHROPIC_KEY   = process.env.ANTHROPIC_API_KEY   || "";
 
 // ── JOB QUEUE ────────────────────────────────────────────────
 const jobs = new Map(); // jobId -> { status, result, error, createdAt }
@@ -153,6 +154,71 @@ async function brightlocalCitationAudit(domain, businessName, location) {
     }
     return {};
   } catch(e) { return {}; }
+}
+
+// SEMrush Site Audit — pulls full crawl data from existing campaign
+async function semrushSiteAuditData(projectId) {
+  try {
+    const base = "https://api.semrush.com/reports/v1/projects";
+
+    // Step 1: Get latest snapshot
+    const snapRes  = await fetchWithTimeout(
+      `${base}/${projectId}/siteaudit/snapshots?key=${SEMRUSH_KEY}`, 15000
+    );
+    const snapJson = await snapRes.json();
+    const snapshots = snapJson?.data || snapJson?.snapshots || [];
+    if (!snapshots.length) {
+      console.log("No SEMrush snapshots found for project", projectId);
+      return {};
+    }
+
+    // Use most recent snapshot
+    const latest = snapshots[0];
+    const snapshotId = latest?.snapshot_id || latest?.id || latest;
+    console.log("Using SEMrush snapshot:", snapshotId);
+
+    // Step 2: Get summary stats
+    const summaryRes  = await fetchWithTimeout(
+      `${base}/${projectId}/siteaudit/snapshots/${snapshotId}/summary?key=${SEMRUSH_KEY}`, 15000
+    );
+    const summary = await summaryRes.json();
+    const s = summary?.data || summary || {};
+
+    // Step 3: Get issues breakdown
+    const issuesRes  = await fetchWithTimeout(
+      `${base}/${projectId}/siteaudit/snapshots/${snapshotId}/issues?key=${SEMRUSH_KEY}&limit=100`, 15000
+    );
+    const issuesJson = await issuesRes.json();
+    const issues = issuesJson?.data || issuesJson?.issues || [];
+
+    // Map issue names to our fields
+    const issueMap = {};
+    issues.forEach(issue => {
+      const name = (issue.name || issue.id || "").toLowerCase();
+      const count = parseInt(issue.count || issue.pages_count || 0);
+      if (name.includes("schema") || name.includes("structured"))     issueMap.schemaErrors  = (issueMap.schemaErrors  || 0) + count;
+      if (name.includes("meta description") && name.includes("miss")) issueMap.missingDesc   = (issueMap.missingDesc   || 0) + count;
+      if (name.includes("title") && name.includes("long"))            issueMap.titlesTooLong = (issueMap.titlesTooLong || 0) + count;
+      if (name.includes("alt") && name.includes("miss"))              issueMap.missingAlt    = (issueMap.missingAlt    || 0) + count;
+      if (name.includes("thin") || name.includes("low word"))         issueMap.thinPages     = (issueMap.thinPages     || 0) + count;
+      if (name.includes("broken") && name.includes("external"))       issueMap.brokenExternal= (issueMap.brokenExternal|| 0) + count;
+      if (name.includes("h1") && name.includes("miss"))               issueMap.missingH1     = (issueMap.missingH1     || 0) + count;
+      if (name.includes("anchor") || name.includes("no anchor"))      issueMap.noAnchors     = (issueMap.noAnchors     || 0) + count;
+    });
+
+    return {
+      pagesCrawled:  parseInt(s.pages_crawled   || s.total_pages || 0),
+      siteHealth:    parseInt(s.health_score    || s.site_health || 0),
+      pages200:      parseInt(s.pages_with_200  || 0),
+      redirects:     parseInt(s.pages_with_301  || s.pages_with_3xx || 0),
+      errors:        parseInt(s.pages_with_4xx  || 0),
+      aiReadiness:   parseInt(s.ai_readiness_score || 0),
+      ...issueMap,
+    };
+  } catch(e) {
+    console.error("SEMrush Site Audit error:", e.message);
+    return {};
+  }
 }
 
 // Google PageSpeed — with per-request timeout
@@ -560,6 +626,17 @@ app.post("/generate", upload.fields([
         if (!data.missingDesc   && sf.sfMissingDesc)   data.missingDesc   = sf.sfMissingDesc;
         if (!data.titlesTooLong && sf.sfTitleTooLong)  data.titlesTooLong = sf.sfTitleTooLong;
         if (!data.missingH1     && sf.sfMissingH1)     data.missingH1     = sf.sfMissingH1;
+      }
+
+      // SEMrush Site Audit — use project ID from form or env variable
+      const projectId = data.semrushProjectId || SEMRUSH_PROJECT;
+      if (SEMRUSH_KEY && projectId) {
+        console.log(`[${jobId}] Fetching SEMrush site audit data for project ${projectId}...`);
+        const auditData = await semrushSiteAuditData(projectId);
+        // Only fill in fields not already provided by staff
+        Object.keys(auditData).forEach(k => {
+          if (!data[k] || data[k] === 0) data[k] = auditData[k];
+        });
       }
 
       // PageSpeed
