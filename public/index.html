@@ -64,7 +64,7 @@
 
   <!-- AUTO FETCH INFO -->
   <div class="auto-section">
-    <p><strong>Auto-fetched from APIs</strong> — these fields populate automatically once you enter the domain:</p>
+    <p><strong>Auto-fetched from APIs</strong> — these populate automatically once you enter the domain:</p>
     <div class="auto-items">
       <span class="auto-item">⚡ Google PageSpeed</span>
       <span class="auto-item">🏆 SEMrush Competitors</span>
@@ -160,7 +160,7 @@
   <div class="card">
     <div class="card-header green">BRIGHTLOCAL <span class="auto-badge">AUTO-FETCHED</span></div>
     <div class="card-body">
-      <p style="font-size:12px;color:#00684F;padding:8px 0;">Citation audit will run automatically using the domain and location above. Override results below if needed.</p>
+      <p style="font-size:12px;color:#00684F;padding:8px 0;">Citation audit runs automatically. Override below if needed.</p>
       <div class="field-row">
         <span class="field-label">Citations Found</span>
         <input type="number" id="citationsFound" placeholder="Auto-populated">
@@ -287,6 +287,19 @@ function redownload() {
   triggerDownload(lastPptxBase64, lastFileName);
 }
 
+async function pollJob(jobId, maxWaitMs=300000) {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    await new Promise(r => setTimeout(r, 3000));
+    const res  = await fetch('/job/' + jobId);
+    const json = await res.json();
+    if (json.status === 'done')  return json;
+    if (json.status === 'error') throw new Error(json.error || 'Generation failed');
+    // still pending — keep polling
+  }
+  throw new Error('Timed out waiting for deck generation');
+}
+
 function triggerDownload(base64, fileName) {
   const binary = atob(base64);
   const bytes  = new Uint8Array(binary.length);
@@ -367,29 +380,29 @@ async function generate() {
   if (screamingFrogFile) formData.append('screamingFrogCsv', screamingFrogFile);
 
   try {
-    const res = await fetch('/generate', { method:'POST', body:formData });
+    // Step 1: Submit job — returns immediately with a job ID
+    const submitRes = await fetch('/generate', { method:'POST', body:formData });
+    if (!submitRes.ok) throw new Error('Failed to start generation');
+    const { jobId } = await submitRes.json();
+    if (!jobId) throw new Error('No job ID returned');
 
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || 'Server error');
-    }
-
-    const { pptxBase64, fileName } = await res.json();
+    // Step 2: Poll for completion every 3 seconds
+    const result = await pollJob(jobId);
 
     finishProgress();
 
     // Store for re-download
-    lastPptxBase64 = pptxBase64;
-    lastFileName   = fileName;
+    lastPptxBase64 = result.pptxBase64;
+    lastFileName   = result.fileName;
 
-    triggerDownload(pptxBase64, fileName);
+    triggerDownload(result.pptxBase64, result.fileName);
 
     document.getElementById('redownloadWrap').style.display = 'block';
-    showStatus('success',`✅ Done! "${fileName}" is downloading now.`);
+    showStatus('success', `✅ Done! "${result.fileName}" is downloading now.`);
 
   } catch(err) {
     finishProgress();
-    showStatus('error','❌ Something went wrong: ' + err.message);
+    showStatus('error', '❌ Something went wrong: ' + err.message);
   } finally {
     btn.disabled = false;
     btn.textContent = '▶   GENERATE DECK';
