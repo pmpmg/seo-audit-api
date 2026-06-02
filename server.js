@@ -120,8 +120,8 @@ async function brightlocalCitationAudit(domain, businessName, location) {
   try {
     const BASE    = "https://tools.brightlocal.com/seo-tools/api";
     const key     = BRIGHTLOCAL_KEY;
-    // Known report ID for killianlaw.com — from BrightLocal dashboard URL
-    const REPORT_ID  = process.env.BRIGHTLOCAL_REPORT_ID  || "2422640";
+    // Known report ID — from form or environment variable fallback
+    const REPORT_ID   = data.brightlocalReportId || process.env.BRIGHTLOCAL_REPORT_ID  || "2422640";
     const LOCATION_ID = process.env.BRIGHTLOCAL_LOCATION_ID || "4071942";
 
     // Step 1: Trigger a fresh run
