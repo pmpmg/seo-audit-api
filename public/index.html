@@ -41,8 +41,19 @@
   .status.working{background:#EEF7FF;color:#12284C;display:block;}
   .status.success{background:#E8F8F2;color:#00684F;display:block;}
   .status.error{background:#FEE2E2;color:#C0392B;display:block;}
-  .progress{width:100%;height:4px;background:#E2EAF0;border-radius:2px;margin-top:8px;overflow:hidden;display:none;}
-  .progress-bar{height:100%;background:#009ABF;border-radius:2px;transition:width .5s;}
+  .progress{width:100%;height:6px;background:#E2EAF0;border-radius:3px;margin-top:12px;overflow:hidden;display:none;}
+  .progress-bar{height:100%;background:#009ABF;border-radius:3px;transition:width .8s ease;}
+  .steps{display:none;background:white;border-radius:8px;padding:16px 20px;margin-top:12px;box-shadow:0 2px 8px rgba(0,0,0,0.07);}
+  .step{display:flex;align-items:flex-start;gap:12px;padding:8px 0;border-bottom:1px solid #F4F7FA;}
+  .step:last-child{border-bottom:none;}
+  .step-icon{font-size:16px;min-width:20px;margin-top:1px;}
+  .step-text{flex:1;}
+  .step-title{font-size:13px;font-weight:bold;color:#12284C;}
+  .step-sub{font-size:11px;color:#8A9BB0;margin-top:2px;}
+  .step.pending .step-icon::before{content:"○";}
+  .step.active  .step-icon::before{content:"⏳";}
+  .step.done    .step-icon::before{content:"✅";}
+  .step.done .step-title{color:#00684F;}
   .legend{font-size:11px;color:#8A9BB0;margin-top:8px;text-align:center;}
   @media(max-width:600px){.field-row{grid-template-columns:1fr;}.field-source{display:none;}}
 </style>
@@ -199,8 +210,47 @@
   </div>
 
   <!-- GENERATE -->
-  <button class="generate-btn" onclick="generate()">▶ &nbsp; GENERATE DECK</button>
+  <button class="generate-btn" id="generateBtn" onclick="generate()">▶ &nbsp; GENERATE DECK</button>
   <div class="progress" id="progressBar"><div class="progress-bar" id="progressFill" style="width:0%"></div></div>
+
+  <div class="steps" id="stepsPanel">
+    <div class="step pending" id="step1">
+      <div class="step-icon"></div>
+      <div class="step-text">
+        <div class="step-title">Fetching Google PageSpeed</div>
+        <div class="step-sub">Mobile & desktop scores, Core Web Vitals</div>
+      </div>
+    </div>
+    <div class="step pending" id="step2">
+      <div class="step-icon"></div>
+      <div class="step-text">
+        <div class="step-title">Pulling SEMrush competitor data</div>
+        <div class="step-sub">Top organic competitors in your market</div>
+      </div>
+    </div>
+    <div class="step pending" id="step3">
+      <div class="step-icon"></div>
+      <div class="step-text">
+        <div class="step-title">Processing uploaded data</div>
+        <div class="step-sub">Majestic & Screaming Frog CSV files</div>
+      </div>
+    </div>
+    <div class="step pending" id="step4">
+      <div class="step-icon"></div>
+      <div class="step-text">
+        <div class="step-title">Generating AI audit narrative</div>
+        <div class="step-sub">Plain-language findings & recommendations</div>
+      </div>
+    </div>
+    <div class="step pending" id="step5">
+      <div class="step-icon"></div>
+      <div class="step-text">
+        <div class="step-title">Building PowerPoint deck</div>
+        <div class="step-sub">8 slides with PMP branding</div>
+      </div>
+    </div>
+  </div>
+
   <div id="status" class="status"></div>
   <p class="legend">* Required field &nbsp;·&nbsp; All other fields auto-populate or improve deck quality</p>
 
@@ -259,9 +309,56 @@ sfUploadArea.addEventListener('drop', e => {
   }
 });
 
-function setProgress(pct) {
+// Step timing (ms from start)
+const STEP_TIMES = [
+  { id:'step1', start:500,   end:18000 },  // PageSpeed ~15s
+  { id:'step2', start:2000,  end:22000 },  // SEMrush competitors
+  { id:'step3', start:500,   end:3000  },  // CSV parsing (instant)
+  { id:'step4', start:22000, end:35000 },  // Claude narrative
+  { id:'step5', start:35000, end:55000 },  // PPTX build
+];
+
+function setStep(id, state) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'step ' + state;
+}
+
+function resetSteps() {
+  STEP_TIMES.forEach(s => setStep(s.id, 'pending'));
+  document.getElementById('stepsPanel').style.display = 'none';
+  document.getElementById('progressBar').style.display = 'none';
+  document.getElementById('progressFill').style.width = '0%';
+}
+
+function startProgressAnimation() {
+  document.getElementById('stepsPanel').style.display = 'block';
   document.getElementById('progressBar').style.display = 'block';
-  document.getElementById('progressFill').style.width = pct + '%';
+  const start = Date.now();
+  const totalMs = 58000;
+
+  // Animate progress bar
+  const barInterval = setInterval(() => {
+    const elapsed = Date.now() - start;
+    const pct = Math.min(95, (elapsed / totalMs) * 100);
+    document.getElementById('progressFill').style.width = pct + '%';
+  }, 200);
+
+  // Animate steps
+  const timers = STEP_TIMES.map(s => {
+    const t1 = setTimeout(() => setStep(s.id, 'active'), s.start);
+    const t2 = setTimeout(() => setStep(s.id, 'done'),  s.end);
+    return [t1, t2];
+  });
+
+  return { barInterval, timers, start };
+}
+
+function finishProgress(anim) {
+  clearInterval(anim.barInterval);
+  anim.timers.forEach(([t1,t2]) => { clearTimeout(t1); clearTimeout(t2); });
+  STEP_TIMES.forEach(s => setStep(s.id, 'done'));
+  document.getElementById('progressFill').style.width = '100%';
 }
 
 async function generate() {
@@ -285,10 +382,11 @@ async function generate() {
     }
   });
 
-  const btn = document.querySelector('.generate-btn');
+  const btn = document.getElementById('generateBtn');
   btn.disabled = true;
-  setProgress(10);
-  showStatus('working','⏳ Step 1/4: Fetching PageSpeed & competitor data…');
+  btn.textContent = '⏳  Generating...';
+  resetSteps();
+  const anim = startProgressAnimation();
 
   const formData = new FormData();
   formData.append('data', JSON.stringify(data));
@@ -296,23 +394,16 @@ async function generate() {
   if (screamingFrogFile) formData.append('screamingFrogCsv', screamingFrogFile);
 
   try {
-    setProgress(30);
-    showStatus('working','⏳ Step 2/4: Running BrightLocal citation audit…');
-
     const res = await fetch('/generate', { method:'POST', body:formData });
-
-    setProgress(70);
-    showStatus('working','⏳ Step 3/4: Generating AI narrative…');
 
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error || 'Server error');
     }
 
-    setProgress(90);
-    showStatus('working','⏳ Step 4/4: Building PowerPoint…');
-
     const { pptxBase64, fileName } = await res.json();
+
+    finishProgress(anim);
 
     const binary = atob(pptxBase64);
     const bytes  = new Uint8Array(binary.length);
@@ -323,13 +414,14 @@ async function generate() {
     a.href=url; a.download=fileName; a.click();
     URL.revokeObjectURL(url);
 
-    setProgress(100);
     showStatus('success',`✅ Done! "${fileName}" is downloading now.`);
 
   } catch(err) {
+    finishProgress(anim);
     showStatus('error','❌ Something went wrong: ' + err.message);
   } finally {
     btn.disabled = false;
+    btn.textContent = '▶   GENERATE DECK';
   }
 }
 
