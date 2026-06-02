@@ -7,6 +7,7 @@ const sharp    = require("sharp");
 const multer   = require("multer");
 const csv      = require("csv-parse/sync");
 const { parseScreamingFrogCsv } = require("./parse_screaming_frog");
+const { parseMajesticCsv }      = require("./parse_majestic");
 
 const app    = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -256,22 +257,7 @@ AUDIT DATA: ${JSON.stringify(data)}`;
   return JSON.parse(json.content[0].text.replace(/```json|```/g,"").trim());
 }
 
-// ── PARSE MAJESTIC CSV ────────────────────────────────────────
-function parseMajesticCsv(buffer) {
-  try {
-    const text    = buffer.toString("utf8");
-    const records = csv.parse(text, { columns:true, skip_empty_lines:true });
-    if (!records.length) return {};
-    const r = records[0];
-    return {
-      trustFlow:        parseFloat(r["TrustFlow"]        || r["Trust Flow"]         || 0),
-      citationFlow:     parseFloat(r["CitationFlow"]     || r["Citation Flow"]      || 0),
-      referringDomains: parseInt(  r["RefDomains"]       || r["Referring Domains"]  || 0),
-      totalBacklinks:   parseInt(  r["ExtBackLinks"]     || r["Total Backlinks"]    || 0),
-      topicalTrustFlow: parseFloat(r["TopicalTrustFlow"] || r["Topical Trust Flow"] || 0),
-    };
-  } catch(e) { return {}; }
-}
+// parseMajesticCsv — imported from ./parse_majestic
 
 // ── PPTX HELPERS ─────────────────────────────────────────────
 const { FaServer,FaLink,FaHeading,FaRobot,FaCode,FaTags,
@@ -430,8 +416,18 @@ async function buildPptx(data, narrative) {
   stit(s6,"Local search is where law firm clients start.");
 
   // Comparison table
-  const competitors = D.competitors || [];
-  const hasComps    = competitors.length > 0;
+  // Merge SEMrush competitors with Majestic competitor backlink data
+  const semrushComps   = D.competitors || [];
+  const majesticComps  = D.majesticCompetitors || [];
+  const competitors = semrushComps.map((c,i) => ({
+    ...c,
+    ...(majesticComps[i] || {}),
+  }));
+  // If no SEMrush comps but have Majestic comps, use those
+  if (!competitors.length && majesticComps.length) {
+    competitors.push(...majesticComps);
+  }
+  const hasComps = competitors.length > 0;
 
   // Header row
   const colW   = hasComps ? 2.1 : 3.0;
@@ -547,7 +543,15 @@ app.post("/generate", upload.fields([
     try {
       // Parse CSV uploads
       if (majesticBuf) {
-        Object.assign(data, parseMajesticCsv(majesticBuf));
+        const majesticData = parseMajesticCsv(majesticBuf);
+        // Pull out competitor data before merging
+        const majesticComps = majesticData.majesticCompetitors || [];
+        delete majesticData.majesticCompetitors;
+        Object.assign(data, majesticData);
+        // Merge Majestic competitor backlink data into existing competitors
+        if (majesticComps.length) {
+          data.majesticCompetitors = majesticComps;
+        }
       }
       if (screamingFrogBuf) {
         const sf = parseScreamingFrogCsv(screamingFrogBuf);
