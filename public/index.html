@@ -185,6 +185,19 @@
     </div>
   </div>
 
+  <!-- SCREAMING FROG CSV UPLOAD -->
+  <div class="card">
+    <div class="card-header blue">SCREAMING FROG — Upload Crawl Overview CSV</div>
+    <div class="card-body">
+      <p style="font-size:12px;color:#6B7A8D;margin-bottom:12px;">In Screaming Frog Desktop, after running a crawl go to <strong>Reports → Crawl Overview → Export</strong>. Upload the CSV here — redirect chains, canonical issues, page depth and response times will be read automatically.</p>
+      <div class="upload-area" id="sfUploadArea" onclick="document.getElementById('sfFile').click()">
+        <input type="file" id="sfFile" accept=".csv" style="display:none" onchange="handleSfFileSelect(this)">
+        <p class="upload-label"><strong>Click to upload Screaming Frog Crawl Overview CSV</strong><br>or drag and drop here</p>
+        <p id="sfFileName" style="font-size:12px;color:#00684F;margin-top:6px;display:none;"></p>
+      </div>
+    </div>
+  </div>
+
   <!-- GENERATE -->
   <button class="generate-btn" onclick="generate()">▶ &nbsp; GENERATE DECK</button>
   <div class="progress" id="progressBar"><div class="progress-bar" id="progressFill" style="width:0%"></div></div>
@@ -196,6 +209,7 @@
 <script>
 const REQUIRED = ['clientName','domain','preparedBy','pagesCrawled','siteHealth','schemaErrors','missingDesc','titlesTooLong'];
 let majesticFile = null;
+let screamingFrogFile = null;
 
 function handleFileSelect(input) {
   if (input.files && input.files[0]) {
@@ -206,7 +220,16 @@ function handleFileSelect(input) {
   }
 }
 
-// Drag and drop
+function handleSfFileSelect(input) {
+  if (input.files && input.files[0]) {
+    screamingFrogFile = input.files[0];
+    document.getElementById('sfUploadArea').classList.add('has-file');
+    document.getElementById('sfFileName').textContent = '✓ ' + screamingFrogFile.name;
+    document.getElementById('sfFileName').style.display = 'block';
+  }
+}
+
+// Drag and drop — Majestic
 const uploadArea = document.getElementById('uploadArea');
 uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.style.borderColor='#009ABF'; });
 uploadArea.addEventListener('dragleave', () => { uploadArea.style.borderColor='#D0D8E4'; });
@@ -218,6 +241,21 @@ uploadArea.addEventListener('drop', e => {
     uploadArea.classList.add('has-file');
     document.getElementById('fileName').textContent = '✓ ' + file.name;
     document.getElementById('fileName').style.display = 'block';
+  }
+});
+
+// Drag and drop — Screaming Frog
+const sfUploadArea = document.getElementById('sfUploadArea');
+sfUploadArea.addEventListener('dragover', e => { e.preventDefault(); sfUploadArea.style.borderColor='#009ABF'; });
+sfUploadArea.addEventListener('dragleave', () => { sfUploadArea.style.borderColor='#D0D8E4'; });
+sfUploadArea.addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (file && file.name.endsWith('.csv')) {
+    screamingFrogFile = file;
+    sfUploadArea.classList.add('has-file');
+    document.getElementById('sfFileName').textContent = '✓ ' + file.name;
+    document.getElementById('sfFileName').style.display = 'block';
   }
 });
 
@@ -254,7 +292,8 @@ async function generate() {
 
   const formData = new FormData();
   formData.append('data', JSON.stringify(data));
-  if (majesticFile) formData.append('majesticCsv', majesticFile);
+  if (majesticFile)      formData.append('majesticCsv',      majesticFile);
+  if (screamingFrogFile) formData.append('screamingFrogCsv', screamingFrogFile);
 
   try {
     setProgress(30);
