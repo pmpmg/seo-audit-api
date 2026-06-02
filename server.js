@@ -427,84 +427,56 @@ function kpi(pres,s,x,y,w,h,val,lbl,sub,color){
 }
 
 // ── GAUGE IMAGE GENERATOR ─────────────────────────────────────
+// Renders a partial-arc gauge as SVG, then rasterizes to PNG via sharp
 async function renderGaugePng(score, label) {
-  const { createCanvas } = require("canvas");
-  const SIZE = 300;
-  const cx = SIZE / 2, cy = SIZE / 2 - 10;
-  const R = 108, SW = 22;
-  const canvas = createCanvas(SIZE, SIZE);
-  const ctx = canvas.getContext("2d");
+  const sharp  = require("sharp");
+  const pct    = Math.max(0, Math.min(100, score));
+  const color  = pct >= 90 ? "#00684F" : pct >= 50 ? "#009ABF" : "#C0392B";
+  const badge  = pct >= 90 ? "EXCELLENT" : pct >= 50 ? "GOOD" : "NEEDS WORK";
 
-  const color = score >= 90 ? "#00684F" : score >= 50 ? "#009ABF" : "#C0392B";
-  const badge = score >= 90 ? "EXCELLENT" : score >= 50 ? "GOOD" : "NEEDS WORK";
+  const SIZE = 300, cx = 150, cy = 140, R = 108, SW = 22;
 
-  ctx.clearRect(0, 0, SIZE, SIZE);
-
-  // White background (PPT images need a bg)
-  ctx.fillStyle = "#FFFFFF";
-  ctx.fillRect(0, 0, SIZE, SIZE);
-
-  const startAngle = (135 * Math.PI) / 180;
-  const fullSweep  = (270 * Math.PI) / 180;
-  const endAngle   = startAngle + fullSweep;
-  const scoreAngle = startAngle + (fullSweep * Math.max(0, Math.min(100, score))) / 100;
-
-  // Background track
-  ctx.beginPath();
-  ctx.arc(cx, cy, R, startAngle, endAngle);
-  ctx.strokeStyle = "#E2EAF0";
-  ctx.lineWidth = SW;
-  ctx.lineCap = "round";
-  ctx.stroke();
-
-  // Colored arc
-  if (score > 0) {
-    ctx.beginPath();
-    ctx.arc(cx, cy, R, startAngle, scoreAngle);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = SW;
-    ctx.lineCap = "round";
-    ctx.stroke();
+  // Calculate arc path for the score portion (135° start, 270° sweep)
+  const startDeg = 135, sweepDeg = 270;
+  const scoreDeg = (sweepDeg * pct) / 100;
+  function polarToXY(deg) {
+    const rad = (deg * Math.PI) / 180;
+    return { x: cx + R * Math.cos(rad), y: cy + R * Math.sin(rad) };
   }
+  const s = polarToXY(startDeg);
+  const e = polarToXY(startDeg + scoreDeg);
+  const trackE = polarToXY(startDeg + sweepDeg);
+  const largeArc = scoreDeg > 180 ? 1 : 0;
+  const trackLarge = sweepDeg > 180 ? 1 : 0;
 
-  // Score number
-  ctx.fillStyle = color;
-  ctx.font = "bold 72px Arial, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(String(score), cx, cy - 8);
-
-  // /100
-  ctx.fillStyle = "#6B7A8D";
-  ctx.font = "24px Arial, sans-serif";
-  ctx.fillText("/100", cx, cy + 44);
-
-  // Label
-  ctx.fillStyle = "#12284C";
-  ctx.font = "bold 26px Arial, sans-serif";
-  ctx.fillText(label, cx, cy + R + 36);
-
-  // Badge pill
+  // Badge pill dimensions
   const bw = 150, bh = 34, br = 17;
   const bx = cx - bw / 2, by = cy + R + 60;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(bx + br, by);
-  ctx.lineTo(bx + bw - br, by);
-  ctx.arcTo(bx + bw, by, bx + bw, by + br, br);
-  ctx.lineTo(bx + bw, by + bh - br);
-  ctx.arcTo(bx + bw, by + bh, bx + bw - br, by + bh, br);
-  ctx.lineTo(bx + br, by + bh);
-  ctx.arcTo(bx, by + bh, bx, by + bh - br, br);
-  ctx.lineTo(bx, by + br);
-  ctx.arcTo(bx, by, bx + br, by, br);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = "bold 18px Arial, sans-serif";
-  ctx.fillText(badge, cx, by + bh / 2);
 
-  return canvas.toBuffer("image/png");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}">
+  <rect width="${SIZE}" height="${SIZE}" fill="white"/>
+  <!-- Background track -->
+  <path d="M ${s.x} ${s.y} A ${R} ${R} 0 ${trackLarge} 1 ${trackE.x} ${trackE.y}"
+    fill="none" stroke="#E2EAF0" stroke-width="${SW}" stroke-linecap="round"/>
+  <!-- Score arc -->
+  ${pct > 0 ? `<path d="M ${s.x} ${s.y} A ${R} ${R} 0 ${largeArc} 1 ${e.x} ${e.y}"
+    fill="none" stroke="${color}" stroke-width="${SW}" stroke-linecap="round"/>` : ""}
+  <!-- Score number -->
+  <text x="${cx}" y="${cy - 2}" text-anchor="middle" dominant-baseline="middle"
+    font-family="Arial,sans-serif" font-size="72" font-weight="bold" fill="${color}">${pct}</text>
+  <!-- /100 -->
+  <text x="${cx}" y="${cy + 46}" text-anchor="middle" dominant-baseline="middle"
+    font-family="Arial,sans-serif" font-size="22" fill="#6B7A8D">/100</text>
+  <!-- Label -->
+  <text x="${cx}" y="${cy + R + 36}" text-anchor="middle" dominant-baseline="middle"
+    font-family="Arial,sans-serif" font-size="26" font-weight="bold" fill="#12284C">${label}</text>
+  <!-- Badge pill -->
+  <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="${br}" fill="${color}"/>
+  <text x="${cx}" y="${by + bh / 2}" text-anchor="middle" dominant-baseline="middle"
+    font-family="Arial,sans-serif" font-size="16" font-weight="bold" fill="white">${badge}</text>
+</svg>`;
+
+  return await sharp(Buffer.from(svg)).png().toBuffer();
 }
 
 // ── BUILD PPTX ────────────────────────────────────────────────
