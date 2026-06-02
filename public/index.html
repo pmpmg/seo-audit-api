@@ -331,7 +331,10 @@ async function pollJob(jobId, maxWaitMs=300000) {
 let _blLookupTimer = null;
 function lookupBrightLocalReport(locationId) {
   const statusEl = document.getElementById('brightlocalReportStatus');
-  locationId = locationId.trim();
+  locationId = locationId.trim().replace(/\/+$/, '');
+  // If they pasted the full URL, extract just the location ID number
+  const urlMatch = locationId.match(/\/location\/(\d+)/);
+  if (urlMatch) locationId = urlMatch[1];
   if (!locationId || locationId.length < 5) {
     statusEl.style.display = 'none';
     return;
