@@ -124,11 +124,24 @@ async function brightlocalCitationAudit(domain, businessName, location) {
     const BASE    = "https://tools.brightlocal.com/seo-tools/api";
     const key     = BRIGHTLOCAL_KEY;
     // Known report ID — from form or environment variable fallback
-    const REPORT_ID   = data.brightlocalReportId || "";
-    const LOCATION_ID = "";
+    let REPORT_ID = data.brightlocalReportId || "";
+
+    // If no report ID but location ID given, auto-lookup latest report
+    if (!REPORT_ID && data.brightlocalLocationId) {
+      try {
+        const lookupRes = await fetch(`${BASE}/v4/lscu?api-key=${key}&location-id=${data.brightlocalLocationId}`);
+        const lookupData = await lookupRes.json();
+        const reports = lookupData.response?.reports || lookupData.reports || lookupData["lscu-reports"] || [];
+        if (reports.length) {
+          const latest = reports.sort((a,b) => new Date(b["date-created"]||0) - new Date(a["date-created"]||0))[0];
+          REPORT_ID = String(latest["report-id"] || latest.id || latest["lscu-id"] || "");
+          console.log("BrightLocal: auto-resolved report ID from location:", REPORT_ID);
+        }
+      } catch(e) { console.error("BrightLocal auto-lookup error:", e.message); }
+    }
 
     if (!REPORT_ID) {
-      console.log("BrightLocal: no report ID provided — skipping.");
+      console.log("BrightLocal: no report ID or location ID provided — skipping.");
       return {};
     }
     console.log("BrightLocal: triggering report run for report", REPORT_ID);
@@ -753,6 +766,33 @@ app.post("/generate", upload.fields([
       setJobError(jobId, err.message);
     }
   })();
+});
+
+
+// GET /brightlocal-reports?locationId=XXXX — find latest citation tracker report for a location
+app.get("/brightlocal-reports", async (req, res) => {
+  const locationId = req.query.locationId;
+  if (!locationId) return res.status(400).json({ error: "locationId required" });
+  if (!BRIGHTLOCAL_KEY) return res.status(500).json({ error: "BrightLocal API key not configured" });
+  try {
+    const BASE = "https://tools.brightlocal.com/seo-tools/api";
+    // Fetch all citation tracker reports for this location
+    const r = await fetch(`${BASE}/v4/lscu?api-key=${BRIGHTLOCAL_KEY}&location-id=${locationId}`);
+    const d = await r.json();
+    console.log("BrightLocal reports lookup:", JSON.stringify(d).slice(0, 400));
+    // Response contains array of reports — find the most recent completed one
+    const reports = d.response?.reports || d.reports || d["lscu-reports"] || [];
+    if (!reports.length) return res.status(404).json({ error: "No reports found for this location" });
+    // Sort by date descending and return the latest
+    const latest = reports.sort((a, b) => new Date(b["date-created"] || b.date || 0) - new Date(a["date-created"] || a.date || 0))[0];
+    const reportId = latest["report-id"] || latest.id || latest["lscu-id"];
+    const reportName = latest["report-name"] || latest.name || "";
+    const lastRun = latest["last-run"] || latest["date-created"] || "";
+    res.json({ reportId, reportName, lastRun });
+  } catch(e) {
+    console.error("BrightLocal reports lookup error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // GET /job/:id — poll for job status
