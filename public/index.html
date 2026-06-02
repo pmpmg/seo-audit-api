@@ -332,8 +332,10 @@ function triggerDownload(base64, fileName) {
   const blob = new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.presentationml.presentation'});
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href = url; a.download = fileName; a.click();
-  URL.revokeObjectURL(url);
+  a.href = url; a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 5000);
 }
 let _barInterval = null, _timerInterval = null, _startTime = null;
 
@@ -776,8 +778,10 @@ function triggerDownload(base64, fileName) {
   const blob = new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.presentationml.presentation'});
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href = url; a.download = fileName; a.click();
-  URL.revokeObjectURL(url);
+  a.href = url; a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 5000);
 }
 let _barInterval = null, _timerInterval = null, _startTime = null;
 
