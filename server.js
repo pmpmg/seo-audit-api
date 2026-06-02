@@ -748,7 +748,6 @@ app.get("/job/:id", (req, res) => {
   res.json({ status: "pending" });
 });
 
-app.get("/", (req,res) => res.sendFile(path.join(__dirname,"public","index.html")));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`SEO Audit API v3 running on port ${PORT}`));
