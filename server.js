@@ -777,14 +777,32 @@ app.get("/brightlocal-reports", async (req, res) => {
   try {
     const BASE = "https://tools.brightlocal.com/seo-tools/api";
     // Correct endpoint: GET /v2/ct/get-all with optional location-id filter
+    // Try filtered by location-id first, fall back to all reports and match manually
     const url = `${BASE}/v2/ct/get-all?api-key=${BRIGHTLOCAL_KEY}&location-id=${locationId}`;
     console.log("BrightLocal lookup URL:", url.replace(BRIGHTLOCAL_KEY, "***"));
     const r = await fetch(url);
     const d = await r.json();
-    console.log("BrightLocal ct/get-all FULL response:", JSON.stringify(d).slice(0, 1000));
-    const reports = d.response?.results || d.results || [];
-    if (!reports.length) return res.status(404).json({ error: "No Citation Tracker reports found for this location", debug: d });
-    // Sort by last_run descending, pick most recent
+    console.log("BrightLocal ct/get-all response:", JSON.stringify(d).slice(0, 500));
+    let reports = d.response?.results || d.results || [];
+
+    // If filtered call returned nothing, fetch ALL reports and match by location_id
+    if (!reports.length) {
+      console.log("BrightLocal: filtered call empty, fetching all reports...");
+      const r2 = await fetch(`${BASE}/v2/ct/get-all?api-key=${BRIGHTLOCAL_KEY}`);
+      const d2 = await r2.json();
+      console.log("BrightLocal all reports:", JSON.stringify(d2).slice(0, 800));
+      const all = d2.response?.results || d2.results || [];
+      reports = all.filter(rep => String(rep.location_id) === String(locationId));
+      console.log(`BrightLocal: found ${reports.length} report(s) matching location_id ${locationId} from ${all.length} total`);
+      if (!reports.length) {
+        // Show available location IDs to help diagnose typos
+        const available = [...new Set(all.map(r => r.location_id).filter(Boolean))];
+        return res.status(404).json({ 
+          error: `No reports found for location ID ${locationId}. Available location IDs in your account: ${available.join(", ")}` 
+        });
+      }
+    }
+
     const latest = reports.sort((a, b) => new Date(b.last_run || 0) - new Date(a.last_run || 0))[0];
     const reportId = latest.report_id || latest["report-id"];
     const reportName = latest.report_name || latest["report-name"] || "";
@@ -812,7 +830,8 @@ app.get("/download/:id", (req, res) => {
   if (!job || job.status !== "done" || !buf) return res.status(404).json({ error: "Not found" });
   const fileName = job.result.fileName || "SEO-Audit.pptx";
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
-  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  const safeFileName = encodeURIComponent(fileName);
+  res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${safeFileName}`);
   res.setHeader("Content-Length", buf.length);
   res.end(buf);
 });
