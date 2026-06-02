@@ -159,60 +159,74 @@ async function brightlocalCitationAudit(domain, businessName, location) {
 // SEMrush Site Audit — pulls full crawl data from existing campaign
 async function semrushSiteAuditData(projectId) {
   try {
-    const base = "https://api.semrush.com/reports/v1/projects";
+    // SEMrush Site Audit API v1 — correct endpoint format
+    const key = SEMRUSH_KEY;
 
-    // Step 1: Get latest snapshot
-    const snapRes  = await fetchWithTimeout(
-      `${base}/${projectId}/siteaudit/snapshots?key=${SEMRUSH_KEY}`, 15000
-    );
-    const snapJson = await snapRes.json();
-    const snapshots = snapJson?.data || snapJson?.snapshots || [];
-    if (!snapshots.length) {
-      console.log("No SEMrush snapshots found for project", projectId);
+    // Step 1: Get campaign info + latest snapshot ID
+    const infoUrl = `https://api.semrush.com/reports/v1/projects/${projectId}/siteaudit/info?key=${key}`;
+    console.log("SEMrush info URL:", infoUrl);
+    const infoRes  = await fetchWithTimeout(infoUrl, 15000);
+    const infoText = await infoRes.text();
+    console.log("SEMrush info response:", infoText.slice(0, 200));
+
+    let infoJson = {};
+    try { infoJson = JSON.parse(infoText); } catch(e) {
+      console.error("SEMrush info parse error:", e.message);
       return {};
     }
 
-    // Use most recent snapshot
-    const latest = snapshots[0];
-    const snapshotId = latest?.snapshot_id || latest?.id || latest;
-    console.log("Using SEMrush snapshot:", snapshotId);
+    const snapshotId = infoJson?.data?.last_snapshot_id
+                    || infoJson?.last_snapshot_id
+                    || infoJson?.snapshot_id;
 
-    // Step 2: Get summary stats
-    const summaryRes  = await fetchWithTimeout(
-      `${base}/${projectId}/siteaudit/snapshots/${snapshotId}/summary?key=${SEMRUSH_KEY}`, 15000
-    );
-    const summary = await summaryRes.json();
-    const s = summary?.data || summary || {};
+    if (!snapshotId) {
+      console.log("No snapshot ID found in SEMrush response");
+      return {};
+    }
+    console.log("Using snapshot ID:", snapshotId);
 
-    // Step 3: Get issues breakdown
-    const issuesRes  = await fetchWithTimeout(
-      `${base}/${projectId}/siteaudit/snapshots/${snapshotId}/issues?key=${SEMRUSH_KEY}&limit=100`, 15000
-    );
-    const issuesJson = await issuesRes.json();
-    const issues = issuesJson?.data || issuesJson?.issues || [];
+    // Step 2: Get audit summary for this snapshot
+    const summaryUrl = `https://api.semrush.com/reports/v1/projects/${projectId}/siteaudit/snapshots/${snapshotId}/summary?key=${key}`;
+    const summaryRes  = await fetchWithTimeout(summaryUrl, 15000);
+    const summaryText = await summaryRes.text();
+    console.log("SEMrush summary:", summaryText.slice(0, 300));
 
-    // Map issue names to our fields
+    let s = {};
+    try { s = JSON.parse(summaryText)?.data || JSON.parse(summaryText) || {}; } catch(e) {}
+
+    // Step 3: Get issues list
+    const issuesUrl = `https://api.semrush.com/reports/v1/projects/${projectId}/siteaudit/snapshots/${snapshotId}/issues?key=${key}&limit=100`;
+    const issuesRes  = await fetchWithTimeout(issuesUrl, 15000);
+    const issuesText = await issuesRes.text();
+
+    let issues = [];
+    try {
+      const ij = JSON.parse(issuesText);
+      issues = ij?.data || ij?.issues || [];
+    } catch(e) {}
+
+    // Map issues to our fields
     const issueMap = {};
     issues.forEach(issue => {
-      const name = (issue.name || issue.id || "").toLowerCase();
-      const count = parseInt(issue.count || issue.pages_count || 0);
-      if (name.includes("schema") || name.includes("structured"))     issueMap.schemaErrors  = (issueMap.schemaErrors  || 0) + count;
-      if (name.includes("meta description") && name.includes("miss")) issueMap.missingDesc   = (issueMap.missingDesc   || 0) + count;
-      if (name.includes("title") && name.includes("long"))            issueMap.titlesTooLong = (issueMap.titlesTooLong || 0) + count;
-      if (name.includes("alt") && name.includes("miss"))              issueMap.missingAlt    = (issueMap.missingAlt    || 0) + count;
-      if (name.includes("thin") || name.includes("low word"))         issueMap.thinPages     = (issueMap.thinPages     || 0) + count;
-      if (name.includes("broken") && name.includes("external"))       issueMap.brokenExternal= (issueMap.brokenExternal|| 0) + count;
-      if (name.includes("h1") && name.includes("miss"))               issueMap.missingH1     = (issueMap.missingH1     || 0) + count;
-      if (name.includes("anchor") || name.includes("no anchor"))      issueMap.noAnchors     = (issueMap.noAnchors     || 0) + count;
+      const name  = (issue.name || issue.id || issue.check_id || "").toLowerCase();
+      const count = parseInt(issue.count || issue.pages_count || issue.errors || 0);
+      if (name.includes("schema") || name.includes("structured"))      issueMap.schemaErrors   = (issueMap.schemaErrors   || 0) + count;
+      if (name.includes("meta description") && name.includes("miss"))  issueMap.missingDesc    = (issueMap.missingDesc    || 0) + count;
+      if (name.includes("title") && name.includes("long"))             issueMap.titlesTooLong  = (issueMap.titlesTooLong  || 0) + count;
+      if (name.includes("alt") && name.includes("miss"))               issueMap.missingAlt     = (issueMap.missingAlt     || 0) + count;
+      if (name.includes("thin") || name.includes("low word"))          issueMap.thinPages      = (issueMap.thinPages      || 0) + count;
+      if (name.includes("broken") && name.includes("external"))        issueMap.brokenExternal = (issueMap.brokenExternal || 0) + count;
+      if (name.includes("h1") && name.includes("miss"))                issueMap.missingH1      = (issueMap.missingH1      || 0) + count;
+      if (name.includes("anchor") || name.includes("no anchor"))       issueMap.noAnchors      = (issueMap.noAnchors      || 0) + count;
     });
 
     return {
-      pagesCrawled:  parseInt(s.pages_crawled   || s.total_pages || 0),
-      siteHealth:    parseInt(s.health_score    || s.site_health || 0),
-      pages200:      parseInt(s.pages_with_200  || 0),
-      redirects:     parseInt(s.pages_with_301  || s.pages_with_3xx || 0),
-      errors:        parseInt(s.pages_with_4xx  || 0),
-      aiReadiness:   parseInt(s.ai_readiness_score || 0),
+      pagesCrawled: parseInt(s.pages_crawled  || s.total_pages    || 0),
+      siteHealth:   parseInt(s.health_score   || s.site_health    || 0),
+      pages200:     parseInt(s.pages_with_200 || 0),
+      redirects:    parseInt(s.pages_with_301 || s.pages_with_3xx || 0),
+      errors:       parseInt(s.pages_with_4xx || 0),
+      aiReadiness:  parseInt(s.ai_readiness_score || 0),
       ...issueMap,
     };
   } catch(e) {
