@@ -15,7 +15,7 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // ── ENV ──────────────────────────────────────────────────────
 const SEMRUSH_KEY     = process.env.SEMRUSH_API_KEY     || "";
-const SEMRUSH_PROJECT = process.env.SEMRUSH_PROJECT_ID  || ""; // Fixed: project ID from URL path, not fid param
+const SEMRUSH_PROJECT = process.env.SEMRUSH_PROJECT_ID  || ""; // Set via form input or Railway env var
 const BRIGHTLOCAL_KEY = process.env.BRIGHTLOCAL_API_KEY || "";
 const ANTHROPIC_KEY   = process.env.ANTHROPIC_API_KEY   || "";
 const PAGESPEED_KEY   = process.env.PAGESPEED_API_KEY   || ""; // Optional — avoids rate limits
@@ -121,10 +121,13 @@ async function brightlocalCitationAudit(domain, businessName, location) {
     const BASE    = "https://tools.brightlocal.com/seo-tools/api";
     const key     = BRIGHTLOCAL_KEY;
     // Known report ID — from form or environment variable fallback
-    const REPORT_ID   = data.brightlocalReportId || process.env.BRIGHTLOCAL_REPORT_ID  || "2422640";
-    const LOCATION_ID = process.env.BRIGHTLOCAL_LOCATION_ID || "4071942";
+    const REPORT_ID   = data.brightlocalReportId || process.env.BRIGHTLOCAL_REPORT_ID  || "";
+    const LOCATION_ID = process.env.BRIGHTLOCAL_LOCATION_ID || "";
 
-    // Step 1: Trigger a fresh run
+    if (!REPORT_ID) {
+      console.log("BrightLocal: no report ID provided — skipping.");
+      return {};
+    }
     console.log("BrightLocal: triggering report run for report", REPORT_ID);
     const runRes  = await fetch(`${BASE}/v2/ct/run`, {
       method: "POST",
