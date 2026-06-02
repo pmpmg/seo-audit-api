@@ -118,17 +118,17 @@ async function semrushSiteAudit(domain) {
 // BrightLocal citation audit
 async function brightlocalCitationAudit(domain, businessName, location) {
   try {
-    // Create audit
-    const createRes = await fetch("https://tools.brightlocal.com/seo-tools/api/v4/lsrc/add", {
+    // BrightLocal API v2 — citation burst
+    const createRes = await fetch("https://tools.brightlocal.com/seo-tools/api/v2/lsrc/add", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        "api-key":       BRIGHTLOCAL_KEY,
-        "business-name": businessName || domain,
+        "api-key":         BRIGHTLOCAL_KEY,
+        "business-name":   businessName || domain,
         "website-address": `https://${domain}`,
-        "country":       "USA",
-        "city":          location || "",
-        "postcode":      "",
+        "country":         "USA",
+        "city":            location || "",
+        "postcode":        "",
       })
     });
     const createText = await createRes.json();
@@ -144,7 +144,7 @@ async function brightlocalCitationAudit(domain, businessName, location) {
     // Poll for results (max 90s)
     for (let i = 0; i < 18; i++) {
       await new Promise(r => setTimeout(r, 5000));
-      const pollRes  = await fetch(`https://tools.brightlocal.com/seo-tools/api/v4/lsrc/get?api-key=${BRIGHTLOCAL_KEY}&report-id=${reportId}`);
+      const pollRes  = await fetch(`https://tools.brightlocal.com/seo-tools/api/v2/lsrc/get?api-key=${BRIGHTLOCAL_KEY}&report-id=${reportId}`);
       const pollData = await pollRes.json();
       if (pollData?.response?.["report-status"] === "Complete") {
         const r = pollData.response;
@@ -187,57 +187,41 @@ async function semrushSiteAuditData(projectId) {
       return {};
     }
 
-    console.log("SEMrush: project found:", info.name, "| status:", info.status,
-      "| errors:", info.errors, "| warnings:", info.warnings,
-      "| crawled:", info.crawled, "| health_score:", info.health_score);
+    // The /info response uses: healthy, errors, warnings, haveIssues, broken, redirected
+    // pagesCrawled = healthy + broken + redirected + blocked (all checked pages)
+    const pagesCrawled = (info.healthy||0) + (info.broken||0) + (info.redirected||0) + (info.blocked||0) + (info.errors||0);
 
-    // Try to get the snapshot ID for the issues breakdown
-    const snapshotId = info.last_snapshot_id || info.snapshot_id || info.id;
+    // Health score = healthy pages / total crawled * 100
+    const total     = pagesCrawled || 1;
+    const siteHealth = Math.round(((info.healthy||0) / total) * 100);
 
-    // Step 2: Get issues list from the snapshot (best effort)
-    let issues = [];
-    if (snapshotId && snapshotId !== info.id) {
-      try {
-        const issuesUrl = `https://api.semrush.com/reports/v1/projects/${projectId}/siteaudit/snapshots/${snapshotId}/issues?key=${key}&limit=100`;
-        const issuesRes  = await fetchWithTimeout(issuesUrl, 15000);
-        const issuesText = await issuesRes.text();
-        console.log("SEMrush issues:", issuesText.slice(0, 300));
-        const ij = JSON.parse(issuesText);
-        issues = ij?.data || ij?.issues || [];
-      } catch(e) { console.log("SEMrush issues fetch failed (non-fatal):", e.message); }
-    }
+    console.log("SEMrush: project found:", info.name,
+      "| healthy:", info.healthy, "| errors:", info.errors,
+      "| warnings:", info.warnings, "| pagesCrawled:", pagesCrawled,
+      "| siteHealth:", siteHealth);
 
-    // Also try the crawled pages endpoint for page count
-    let pagesCrawled = parseInt(info.crawled || info.pages_crawled || 0);
-    let siteHealth   = parseInt(info.health_score || info.site_health || 0);
-
-    // If health_score missing, derive from errors/warnings/healthy ratio
-    if (!siteHealth && (info.healthy || info.errors)) {
-      const total = (info.healthy||0) + (info.errors||0) + (info.warnings||0);
-      if (total > 0) siteHealth = Math.round((info.healthy / total) * 100);
-    }
-
-    // Map issues to our fields
-    const issueMap = {};
-    issues.forEach(issue => {
-      const name  = (issue.name || issue.id || issue.check_id || "").toLowerCase();
-      const count = parseInt(issue.count || issue.pages_count || issue.errors || 0);
-      if (name.includes("schema") || name.includes("structured"))      issueMap.schemaErrors   = (issueMap.schemaErrors   || 0) + count;
-      if (name.includes("meta description") && name.includes("miss"))  issueMap.missingDesc    = (issueMap.missingDesc    || 0) + count;
-      if (name.includes("title") && name.includes("long"))             issueMap.titlesTooLong  = (issueMap.titlesTooLong  || 0) + count;
-      if (name.includes("alt") && name.includes("miss"))               issueMap.missingAlt     = (issueMap.missingAlt     || 0) + count;
-      if (name.includes("thin") || name.includes("low word"))          issueMap.thinPages      = (issueMap.thinPages      || 0) + count;
-      if (name.includes("broken") && name.includes("external"))        issueMap.brokenExternal = (issueMap.brokenExternal || 0) + count;
-      if (name.includes("h1") && name.includes("miss"))                issueMap.missingH1      = (issueMap.missingH1      || 0) + count;
-      if (name.includes("anchor") || name.includes("no anchor"))       issueMap.noAnchors      = (issueMap.noAnchors      || 0) + count;
-    });
+    // Defect codes — map known SEMrush issue codes to our fields
+    // From response: defects: { "112": 44, "102": 7, "135": 2, "216": 2, "217": 68, ... }
+    const defects = info.defects || {};
+    const issueMap = {
+      // Common SEMrush issue code mappings
+      missingDesc:    parseInt(defects["217"] || defects["17"]  || 0), // missing meta description
+      titlesTooLong:  parseInt(defects["216"] || defects["16"]  || 0), // title too long
+      missingH1:      parseInt(defects["15"]  || defects["115"] || 0), // missing H1
+      missingAlt:     parseInt(defects["112"] || defects["12"]  || 0), // missing alt text
+      schemaErrors:   parseInt(defects["223"] || defects["23"]  || 0), // schema issues
+      thinPages:      parseInt(defects["105"] || defects["5"]   || 0), // thin content
+      brokenExternal: parseInt(defects["135"] || defects["35"]  || 0), // broken external links
+      noAnchors:      parseInt(defects["45"]  || 0),                    // no anchor text
+    };
+    console.log("SEMrush defect map:", issueMap);
 
     return {
-      pagesCrawled: pagesCrawled || parseInt(info.crawled || 0),
-      siteHealth:   siteHealth,
-      pages200:     parseInt(info.healthy   || 0),
+      pagesCrawled,
+      siteHealth,
+      pages200:     parseInt(info.healthy    || 0),
       redirects:    parseInt(info.redirected || 0),
-      errors:       parseInt(info.broken    || info.errors || 0),
+      errors:       parseInt(info.broken     || 0),
       aiReadiness:  parseInt(info.ai_readiness_score || 0),
       ...issueMap,
     };
@@ -265,12 +249,12 @@ async function fetchPageSpeed(domain) {
     const keyStr = PAGESPEED_KEY ? `&key=${PAGESPEED_KEY}` : "";
     let mob = {}, dsk = {};
     try {
-      const r = await fetchWithTimeout(`${base}?url=${encodeURIComponent(url)}&strategy=mobile${keyStr}`, 20000);
+      const r = await fetchWithTimeout(`${base}?url=${encodeURIComponent(url)}&strategy=mobile${keyStr}`, 30000);
       mob = await r.json();
       if (mob.error) { console.log("PageSpeed mobile API error:", mob.error.message); mob = {}; }
     } catch(e) { console.log("PageSpeed mobile failed:", e.message); }
     try {
-      const r = await fetchWithTimeout(`${base}?url=${encodeURIComponent(url)}&strategy=desktop${keyStr}`, 20000);
+      const r = await fetchWithTimeout(`${base}?url=${encodeURIComponent(url)}&strategy=desktop${keyStr}`, 30000);
       dsk = await r.json();
       if (dsk.error) { console.log("PageSpeed desktop API error:", dsk.error.message); dsk = {}; }
     } catch(e) { console.log("PageSpeed desktop failed:", e.message); }
