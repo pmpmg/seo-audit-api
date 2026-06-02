@@ -304,12 +304,12 @@ sfUploadArea.addEventListener('drop', e => {
 
 // Total estimated duration in ms (~2.5 mins with BrightLocal)
 const TOTAL_MS = 150000;
-let lastPptxBase64 = null;
-let lastFileName    = null;
+let lastJobId    = null;
+let lastFileName = null;
 
 function redownload() {
-  if (!lastPptxBase64 || !lastFileName) return;
-  triggerDownload(lastPptxBase64, lastFileName);
+  if (!lastJobId || !lastFileName) return;
+  triggerDownload(lastJobId, lastFileName);
 }
 
 async function pollJob(jobId, maxWaitMs=300000) {
@@ -325,17 +325,13 @@ async function pollJob(jobId, maxWaitMs=300000) {
   throw new Error('Timed out waiting for deck generation');
 }
 
-function triggerDownload(base64, fileName) {
-  const binary = atob(base64);
-  const bytes  = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const blob = new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.presentationml.presentation'});
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href = url; a.download = fileName;
+function triggerDownload(jobId, fileName) {
+  const a = document.createElement('a');
+  a.href = '/download/' + jobId;
+  a.download = fileName;
   document.body.appendChild(a);
   a.click();
-  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 5000);
+  setTimeout(() => a.remove(), 3000);
 }
 let _barInterval = null, _timerInterval = null, _startTime = null;
 
@@ -419,10 +415,10 @@ async function generate() {
     finishProgress();
 
     // Store for re-download
-    lastPptxBase64 = result.pptxBase64;
-    lastFileName   = result.fileName;
+    lastJobId    = jobId;
+    lastFileName = result.fileName;
 
-    triggerDownload(result.pptxBase64, result.fileName);
+    triggerDownload(jobId, result.fileName);
 
     document.getElementById('redownloadWrap').style.display = 'block';
     showStatus('success', `✅ Done! "${result.fileName}" is downloading now.`);
