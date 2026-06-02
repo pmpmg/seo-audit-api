@@ -6,6 +6,7 @@ const ReactDOM = require("react-dom/server");
 const sharp    = require("sharp");
 const multer   = require("multer");
 const csv      = require("csv-parse/sync");
+const { parseScreamingFrogCsv } = require("./parse_screaming_frog");
 
 const app    = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -490,14 +491,28 @@ async function buildPptx(data, narrative) {
 // ── ROUTES ────────────────────────────────────────────────────
 
 // Main generate endpoint — accepts multipart for Majestic CSV
-app.post("/generate", upload.single("majesticCsv"), async (req,res) => {
+app.post("/generate", upload.fields([
+  { name: "majesticCsv",      maxCount: 1 },
+  { name: "screamingFrogCsv", maxCount: 1 },
+]), async (req,res) => {
   try {
     const data = JSON.parse(req.body.data || "{}");
 
     // Parse Majestic CSV if uploaded
-    if (req.file) {
-      const majestic = parseMajesticCsv(req.file.buffer);
+    if (req.files?.majesticCsv?.[0]) {
+      const majestic = parseMajesticCsv(req.files.majesticCsv[0].buffer);
       Object.assign(data, majestic);
+    }
+
+    // Parse Screaming Frog CSV if uploaded
+    if (req.files?.screamingFrogCsv?.[0]) {
+      const sf = parseScreamingFrogCsv(req.files.screamingFrogCsv[0].buffer);
+      Object.assign(data, sf);
+      // Use SF data to fill gaps in SEMrush data if not already set
+      if (!data.pagesCrawled && sf.sfPagesCrawled) data.pagesCrawled = sf.sfPagesCrawled;
+      if (!data.missingDesc  && sf.sfMissingDesc)  data.missingDesc  = sf.sfMissingDesc;
+      if (!data.titlesTooLong && sf.sfTitleTooLong) data.titlesTooLong = sf.sfTitleTooLong;
+      if (!data.missingH1    && sf.sfMissingH1)    data.missingH1    = sf.sfMissingH1;
     }
 
     // Auto-fetch PageSpeed
