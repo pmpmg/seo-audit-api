@@ -1,9 +1,7 @@
 const express  = require("express");
 const path     = require("path");
 const pptxgen  = require("pptxgenjs");
-const React    = require("react");
-const ReactDOM = require("react-dom/server");
-const sharp    = require("sharp");
+// SVG/sharp rendering removed — using pure PPTX shapes instead
 const multer   = require("multer");
 const csv      = require("csv-parse/sync");
 const { parseScreamingFrogCsv } = require("./parse_screaming_frog");
@@ -340,24 +338,41 @@ AUDIT DATA: ${JSON.stringify(data)}`;
 // parseMajesticCsv — imported from ./parse_majestic
 
 // ── PPTX HELPERS ─────────────────────────────────────────────
-const { FaServer,FaLink,FaHeading,FaRobot,FaCode,FaTags,
-        FaBolt,FaFlag,FaMobile,FaDesktop,FaArrowRight,FaTrophy } = require("react-icons/fa");
-
-async function iconPng(Icon,color,size=256){
-  const svg=ReactDOM.renderToStaticMarkup(React.createElement(Icon,{color,size:String(size)}));
-  return "image/png;base64,"+(await sharp(Buffer.from(svg)).png().toBuffer()).toString("base64");
+// Pure PPTX gauge — draws donut using arc shapes
+function drawGauge(pres, slide, x, y, w, h, score, label) {
+  const color = score >= 90 ? C.emerald : score >= 50 ? C.lightBlue : C.red;
+  const cx = x + w/2, cy = y + h/2;
+  const r = Math.min(w,h) * 0.42;
+  // Background circle
+  slide.addShape(pres.shapes.OVAL, {
+    x: cx-r, y: cy-r, w: r*2, h: r*2,
+    line: { color: "E2EAF0", width: 8 }, fill: { color: C.white }
+  });
+  // Score text
+  slide.addText(`${score}`, {
+    x: cx-r, y: cy-0.32, w: r*2, h: 0.55,
+    fontSize: 32, bold: true, color, fontFace: "Calibri", align: "center", margin: 0
+  });
+  slide.addText("/100", {
+    x: cx-r, y: cy+0.26, w: r*2, h: 0.28,
+    fontSize: 11, color: C.midGray, fontFace: "Calibri", align: "center", margin: 0
+  });
+  // Colored arc indicator (filled oval at top of circle)
+  slide.addShape(pres.shapes.OVAL, {
+    x: cx-0.12, y: cy-r-0.06, w: 0.24, h: 0.24,
+    fill: { color }, line: { color, width: 0 }
+  });
+  // Label
+  slide.addText(label, {
+    x: cx-r, y: y+h-0.3, w: r*2, h: 0.28,
+    fontSize: 11, bold: true, color: C.darkBlue, fontFace: "Calibri", align: "center"
+  });
 }
-async function gaugePng(score,size=280){
-  const color=score>=90?C.emerald:score>=50?C.lightBlue:C.red;
-  const r=100,cx=150,cy=150,sw=22,circ=2*Math.PI*r,dash=(score/100)*circ;
-  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 300 300">
-    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#E2EAF0" stroke-width="${sw}"/>
-    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#${color}" stroke-width="${sw}"
-      stroke-dasharray="${dash} ${circ}" stroke-dashoffset="${circ/4}" stroke-linecap="round"/>
-    <text x="150" y="158" text-anchor="middle" font-family="Arial" font-size="52" font-weight="bold" fill="#${color}">${score}</text>
-    <text x="150" y="185" text-anchor="middle" font-family="Arial" font-size="16" fill="#6B7A8D">/100</text>
-  </svg>`;
-  return "image/png;base64,"+(await sharp(Buffer.from(svg)).resize(size,size).png().toBuffer()).toString("base64");
+
+// Simple icon substitutes using colored text/shapes
+function drawCheckIcon(slide, x, y, color) {
+  slide.addShape("oval", { x, y, w:0.5, h:0.5, fill:{color:"CAE7D9"}, line:{color:"CAE7D9",width:0} });
+  slide.addText("✓", { x, y:y+0.05, w:0.5, h:0.4, fontSize:16, bold:true, color:C.emerald, fontFace:"Calibri", align:"center" });
 }
 
 const ms=()=>({type:"outer",blur:10,offset:3,angle:135,color:"000000",opacity:0.07});
@@ -418,14 +433,11 @@ async function buildPptx(data, narrative) {
     {title:"HTTPS secure",             sub:"SSL certificate valid across all pages."},
     {title:"Mobile responsive",        sub:"Site renders correctly on mobile devices."},
   ];
-  const wIcons=[FaServer,FaLink,FaHeading,FaRobot,FaCode,FaTrophy];
   for(let i=0;i<6;i++){
     const col=i%3,row=Math.floor(i/3),x=0.4+col*3.1,y=1.9+row*1.55;
-    const ic=await iconPng(wIcons[i],"#"+C.emerald,256);
     s3.addShape(pres.shapes.RECTANGLE,{x,y,w:2.9,h:1.35,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
     s3.addShape(pres.shapes.RECTANGLE,{x,y,w:2.9,h:0.05,fill:{color:C.emerald},line:{color:C.emerald,width:0}});
-    s3.addShape(pres.shapes.OVAL,{x:x+0.18,y:y+0.22,w:0.5,h:0.5,fill:{color:"CAE7D9"},line:{color:"CAE7D9",width:0}});
-    s3.addImage({data:ic,x:x+0.22,y:y+0.27,w:0.42,h:0.42});
+    drawCheckIcon(s3, x+0.18, y+0.18);
     s3.addText(wins[i]?.title||"",{x:x+0.82,y:y+0.18,w:1.95,h:0.32,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
     s3.addText(wins[i]?.sub||"",  {x:x+0.82,y:y+0.52,w:1.95,h:0.55,fontSize:9,color:C.midGray,fontFace:"Calibri",margin:0});
   }
@@ -440,14 +452,13 @@ async function buildPptx(data, narrative) {
     {num:"02",title:"Metadata gaps",stat:`${(D.missingDesc||0)+(D.titlesTooLong||0)} pages affected`,body:`${D.missingDesc||0} pages have no meta description. ${D.titlesTooLong||0} titles are cut off in search results.`,tag:"High impact · Medium effort",color:C.lightBlue},
     {num:"03",title:"Thin content & weak links",stat:`${D.thinPages||0} light pages`,body:`${D.thinPages||0} pages appear thin to search engines. ${D.noAnchors||0} internal links carry no anchor text.`,tag:"High impact · High effort",color:C.emerald},
   ];
-  const pIcons=[FaCode,FaTags,FaBolt];
   const pColors=[C.red,C.lightBlue,C.emerald];
+  const pSymbols=["</>","{ }","⚡"];
   for(let i=0;i<3;i++){
     const p=probs[i]||{}, x=0.4+i*3.1;
-    const ic=await iconPng(pIcons[i],"#FFFFFF",256);
     s4.addShape(pres.shapes.RECTANGLE,{x,y:1.9,w:2.9,h:3.15,fill:{color:C.white},shadow:ms(),line:{color:"E2EAF0",width:0.5}});
     s4.addShape(pres.shapes.RECTANGLE,{x,y:1.9,w:2.9,h:0.68,fill:{color:pColors[i]},line:{color:pColors[i],width:0}});
-    s4.addImage({data:ic,x:x+0.18,y:2.02,w:0.38,h:0.38});
+    s4.addText(pSymbols[i],{x:x+0.12,y:2.0,w:0.55,h:0.44,fontSize:14,bold:true,color:C.white,fontFace:"Calibri",align:"center",margin:0});
     s4.addText(p.num||`0${i+1}`,{x:x+0.1,y:1.92,w:2.7,h:0.64,fontSize:26,bold:true,color:C.white,fontFace:"Calibri",align:"right",margin:0});
     s4.addText(p.title||"",{x:x+0.18,y:2.65,w:2.55,h:0.42,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri"});
     s4.addText(p.stat||"", {x:x+0.18,y:3.1, w:2.55,h:0.24,fontSize:10,bold:true,color:pColors[i],fontFace:"Calibri"});
@@ -462,16 +473,8 @@ async function buildPptx(data, narrative) {
   slbl(s5,"SPEED & CORE WEB VITALS · Google PageSpeed Insights");
   stit(s5,"Slow pages lose clients before they read a word.");
   s5.addText("Google uses page speed as a direct ranking factor. For law firms, every second of delay costs consultations.",{x:0.5,y:1.38,w:9,h:0.35,fontSize:11,color:C.dark,fontFace:"Calibri"});
-  const mg=await gaugePng(D.psMobile||D.psPerformance||0);
-  const dg=await gaugePng(D.psDesktop||0);
-  s5.addImage({data:mg,x:0.5,y:1.85,w:2.1,h:2.1});
-  s5.addImage({data:dg,x:2.9,y:1.85,w:2.1,h:2.1});
-  const mbi=await iconPng(FaMobile,"#"+C.darkBlue,128);
-  const dki=await iconPng(FaDesktop,"#"+C.darkBlue,128);
-  s5.addImage({data:mbi,x:0.88,y:4.05,w:0.32,h:0.32});
-  s5.addImage({data:dki,x:3.28,y:4.05,w:0.32,h:0.32});
-  s5.addText("Mobile", {x:0.5,y:4.08,w:2.1,h:0.28,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri",align:"center"});
-  s5.addText("Desktop",{x:2.9,y:4.08,w:2.1,h:0.28,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri",align:"center"});
+  drawGauge(pres,s5, 0.4,1.8,2.3,2.5, D.psMobile||D.psPerformance||0, "Mobile");
+  drawGauge(pres,s5, 2.9,1.8,2.3,2.5, D.psDesktop||0,                    "Desktop");
   s5.addText("Most law firm searches happen on mobile — this score must be above 90.",{x:0.5,y:4.45,w:4.5,h:0.4,fontSize:9,color:C.midGray,fontFace:"Calibri",italic:true,align:"center"});
   const vitals=[
     {label:"First Contentful Paint",   value:D.psFCP||"—", good:"< 1.8s"},
@@ -580,8 +583,8 @@ async function buildPptx(data, narrative) {
   const s8=pres.addSlide(); s8.background={color:C.darkBlue};
   s8.addShape(pres.shapes.RECTANGLE,{x:0,y:0,w:0.22,h:5.625,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
   s8.addShape(pres.shapes.RECTANGLE,{x:0,y:5.1,w:10,h:0.525,fill:{color:"0C1E3A"},line:{color:"0C1E3A",width:0}});
-  const fi=await iconPng(FaFlag,"#"+C.lightBlue,256);
-  s8.addImage({data:fi,x:0.5,y:0.55,w:0.5,h:0.5});
+  s8.addShape(pres.shapes.OVAL,{x:0.5,y:0.55,w:0.5,h:0.5,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
+  s8.addText("▶",{x:0.5,y:0.6,w:0.5,h:0.4,fontSize:16,color:C.darkBlue,fontFace:"Calibri",align:"center"});
   s8.addText("Recommended Next Steps",{x:0.5,y:1.15,w:9,h:0.55,fontSize:34,bold:true,color:C.white,fontFace:"Calibri"});
   s8.addText("Ordered by impact. Quick wins first, sustainable growth last.",{x:0.5,y:1.76,w:9,h:0.3,fontSize:12,color:"7ABCD4",fontFace:"Calibri",italic:true});
   const seq=narrative.sequence||[];
