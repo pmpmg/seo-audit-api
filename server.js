@@ -777,11 +777,13 @@ app.get("/brightlocal-reports", async (req, res) => {
   try {
     const BASE = "https://tools.brightlocal.com/seo-tools/api";
     // Correct endpoint: GET /v2/ct/get-all with optional location-id filter
-    const r = await fetch(`${BASE}/v2/ct/get-all?api-key=${BRIGHTLOCAL_KEY}&location-id=${locationId}`);
+    const url = `${BASE}/v2/ct/get-all?api-key=${BRIGHTLOCAL_KEY}&location-id=${locationId}`;
+    console.log("BrightLocal lookup URL:", url.replace(BRIGHTLOCAL_KEY, "***"));
+    const r = await fetch(url);
     const d = await r.json();
-    console.log("BrightLocal ct/get-all response:", JSON.stringify(d).slice(0, 400));
-    const reports = d.response?.results || [];
-    if (!reports.length) return res.status(404).json({ error: "No Citation Tracker reports found for this location" });
+    console.log("BrightLocal ct/get-all FULL response:", JSON.stringify(d).slice(0, 1000));
+    const reports = d.response?.results || d.results || [];
+    if (!reports.length) return res.status(404).json({ error: "No Citation Tracker reports found for this location", debug: d });
     // Sort by last_run descending, pick most recent
     const latest = reports.sort((a, b) => new Date(b.last_run || 0) - new Date(a.last_run || 0))[0];
     const reportId = latest.report_id || latest["report-id"];
