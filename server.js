@@ -1021,17 +1021,80 @@ async function buildPptx(data, narrative) {
 // ── ROUTES ────────────────────────────────────────────────────
 
 // GET /debug — shows env config status (no secret values)
-app.get("/debug", (req, res) => {
+app.get("/debug", (req, res) => res.redirect("/version"));
+
+app.get("/version", (req, res) => {
+  const fs = require("fs");
+  const path = require("path");
+
+  // Read own source to extract function names and slide list
+  let src = "";
+  try { src = fs.readFileSync(__filename, "utf8"); } catch(e) {}
+
+  // Extract top-level async/regular functions
+  const fnMatches = [...src.matchAll(/^(?:async )?function (\w+)/gm)].map(m => m[1]);
+
+  // Extract slide comments (// S1 COVER etc.)
+  const slides = [...src.matchAll(/\/\/ (S\d+ [A-Z \+&·']+)/g)].map(m => m[1].trim());
+
+  // Extract app routes
+  const routes = [...src.matchAll(/app\.(get|post|put|delete)\("([^"]+)"/g)].map(m => `${m[1].toUpperCase()} ${m[2]}`);
+
+  // Check which optional modules are present
+  const modules = ["parse_screaming_frog","parse_majestic","renderGaugePng"].reduce((acc, mod) => {
+    acc[mod] = src.includes(mod) ? "✅ present" : "❌ missing";
+    return acc;
+  }, {});
+
+  // Check which data sources are wired up
+  const dataSources = {
+    semrush_site_audit:      src.includes("semrushSiteAuditData")  ? "✅" : "❌",
+    semrush_organic:         src.includes("semrushOrganicKeywords") ? "✅" : "❌",
+    semrush_competitors:     src.includes("semrushCompetitors")     ? "✅" : "❌",
+    semrush_competitor_gap:  src.includes("semrushCompetitorGap")   ? "✅" : "❌",
+    brightlocal_citations:   src.includes("brightlocalCitationAudit") ? "✅" : "❌",
+    brightlocal_auto_lookup: src.includes("v2/ct/get-all")         ? "✅" : "❌",
+    pagespeed:               src.includes("fetchPageSpeed")         ? "✅" : "❌",
+    screaming_frog_parser:   src.includes("parseScreamingFrogCsv") ? "✅" : "❌",
+    majestic_parser:         src.includes("parseMajesticCsv")      ? "✅" : "❌",
+    gauge_png_renderer:      src.includes("renderGaugePng")        ? "✅" : "❌",
+    binary_pptx_download:    src.includes("/download/:id")         ? "✅" : "❌",
+  };
+
+  // Key fixes — check for known patterns
+  const fixes = {
+    brightlocal_scope_bug_fixed:  src.includes("async function brightlocalCitationAudit(domain, businessName, location, reportId, locationId)") ? "✅" : "❌",
+    content_disposition_ascii:    src.includes("asciiFallback")    ? "✅" : "❌",
+    revoke_object_url_delayed:    src.includes("setTimeout")       ? "✅" : "❌",
+    actions_capped_at_6:          src.includes("slice(0,6)")       ? "✅" : "❌",
+    semrush_merge_empty_string:   src.includes('data[k] === ""')   ? "✅" : "❌",
+  };
+
   res.json({
-    semrush_key_set:        !!SEMRUSH_KEY,
-    semrush_key_prefix:     SEMRUSH_KEY ? SEMRUSH_KEY.slice(0,6)+"..." : "NOT SET",
-    semrush_project:        SEMRUSH_PROJECT,
-    brightlocal_key_set:    !!BRIGHTLOCAL_KEY,
-    brightlocal_report_id:  data?.brightlocalReportId || "comes from form only",
-    brightlocal_location_id:"comes from form only",
-    anthropic_key_set:      !!ANTHROPIC_KEY,
-    pagespeed_key_set:      !!PAGESPEED_KEY,
-    node_version:           process.version,
+    app:           "SEO Audit Generator — PMP Marketing Group",
+    deployed_at:   new Date().toISOString(),
+    node_version:  process.version,
+    server_file:   __filename,
+
+    api_keys: {
+      semrush:      SEMRUSH_KEY     ? `✅ set (${SEMRUSH_KEY.slice(0,4)}...)` : "❌ NOT SET",
+      brightlocal:  BRIGHTLOCAL_KEY ? `✅ set (${BRIGHTLOCAL_KEY.slice(0,4)}...)` : "❌ NOT SET",
+      anthropic:    ANTHROPIC_KEY   ? `✅ set` : "❌ NOT SET",
+      pagespeed:    PAGESPEED_KEY   ? `✅ set` : "❌ NOT SET",
+    },
+
+    config: {
+      semrush_project_env: SEMRUSH_PROJECT || "NOT SET — must come from form",
+      brightlocal_id:      "form only — no hardcoded fallback",
+      pptx_model:          src.match(/model:"([^"]+)"/)?.[1] || "unknown",
+    },
+
+    slides:      slides,
+    routes:      routes,
+    functions:   fnMatches,
+    modules,
+    data_sources: dataSources,
+    known_fixes:  fixes,
   });
 });
 
