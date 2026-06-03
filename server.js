@@ -886,7 +886,7 @@ async function buildPptx(data, narrative) {
 
   // S7 CONTENT AUTHORITY + COMPETITOR GAP
   const s7=pres.addSlide(); s7.background={color:C.white};
-  slbl(s7,"CONTENT AUTHORITY · SEMrush Competitor Gap Analysis");
+  slbl(s7,"CONTENT AUTHORITY · Screaming Frog + SEMrush");
   const OA  = D.organicAudit || {};
   const SF  = D.sf || {};
   const CG  = D.contentGap || null;
@@ -895,12 +895,13 @@ async function buildPptx(data, narrative) {
 
   // Dynamic headline based on data
   const s7Pages = SF.htmlPages || D.pagesCrawled || 0;
-  const s7Gaps  = hasCG ? CG.clustered.length : 0;
-  const s7Title = hasCG && s7Pages
-    ? `${s7Pages} pages. Competitors own ${s7Gaps} topic${s7Gaps!==1?"s":""} you don't.`
+  const PAsWeak = (SF.practiceAreas||[]).filter(p=>p.status!=="Strong").length;
+  const PAsTotal = (SF.practiceAreas||[]).length;
+  const s7Title = s7Pages && PAsTotal
+    ? `${s7Pages} pages. ${PAsWeak} of ${PAsTotal} practice areas lack topical depth.`
     : s7Pages
     ? `${s7Pages} pages crawled. Here's what the content tells us.`
-    : "Content is there. But is it working for you?";
+    : "Content is there. But is Google finding it?";
   stit(s7, s7Title);
 
   // ── LEFT PANEL: Site architecture + keyword rankings ──────────
@@ -940,74 +941,53 @@ async function buildPptx(data, narrative) {
   // ── RIGHT PANEL: Competitor content gap ───────────────────────
   s7.addShape(pres.shapes.RECTANGLE,{x:3.5,y:1.72,w:6.1,h:3.48,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
 
-  if (hasCG) {
-    // Competitor domains header
-    const compNames = (CG.competitorDomains||[]).join("  ·  ");
-    s7.addText("COMPETITOR CONTENT GAP",{x:3.6,y:1.82,w:4.5,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
-    s7.addText(`vs. ${compNames}`,{x:3.6,y:2.04,w:5.9,h:0.18,fontSize:8,color:C.midGray,fontFace:"Calibri",margin:0});
+  // Practice area pyramid table
+  const PAs = SF.practiceAreas || [];
+  s7.addText("PRACTICE AREA CONTENT PYRAMID",{x:3.6,y:1.82,w:6.0,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
 
-    // Summary chips
-    s7.addShape(pres.shapes.RECTANGLE,{x:7.6,y:1.8,w:1.0,h:0.42,fill:{color:C.red},line:{color:C.red,width:0}});
-    s7.addText(String(CG.totalGapKeywords||0),{x:7.6,y:1.82,w:1.0,h:0.22,fontSize:14,bold:true,color:C.white,fontFace:"Calibri",align:"center",margin:0});
-    s7.addText("gap kws",{x:7.6,y:2.02,w:1.0,h:0.18,fontSize:7,color:C.white,fontFace:"Calibri",align:"center",margin:0});
+  if (PAs.length > 0) {
+    // Column headers
+    s7.addShape(pres.shapes.RECTANGLE,{x:3.6,y:2.06,w:6.0,h:0.28,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
+    [["PRACTICE AREA",3.68,2.55],["HUB",6.32,0.5],["SUB-HUBS",6.86,0.7],["SPOKES",7.6,0.6],["STATUS",8.24,1.36]].forEach(([lbl,x,w])=>{
+      s7.addText(lbl,{x,y:2.08,w,h:0.24,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",valign:"middle",margin:0});
+    });
 
-    // Gap cluster rows
-    const displayGaps = CG.clustered.slice(0,7);
-    displayGaps.forEach((g,i)=>{
-      const y=2.26+i*0.44;
-      const maxVol = CG.clustered[0].volume || 1;
-      const barW   = Math.max(0.1, Math.min(3.6, 3.6*(g.volume/maxVol)));
-      const isTop  = i === 0;
-
-      s7.addShape(pres.shapes.RECTANGLE,{x:3.6,y,w:5.9,h:0.42,fill:{color:isTop?C.darkBlue:C.white},line:{color:isTop?C.darkBlue:"E2EAF0",width:0.3}});
-
-      // Topic label
-      s7.addText(g.label,{x:3.7,y:y+0.06,w:1.8,h:0.3,fontSize:10,bold:isTop,color:isTop?C.white:C.darkBlue,fontFace:"Calibri",valign:"middle",margin:0});
-
-      // Volume bar
-      s7.addShape(pres.shapes.RECTANGLE,{x:5.6,y:y+0.16,w:3.6,h:0.12,fill:{color:isTop?"4A90D9":"E2EAF0"},line:{color:isTop?"4A90D9":"E2EAF0",width:0}});
-      s7.addShape(pres.shapes.RECTANGLE,{x:5.6,y:y+0.16,w:barW,h:0.12,fill:{color:isTop?C.white:C.red},line:{color:isTop?C.white:C.red,width:0}});
-
-      // Volume label
-      const volLabel = g.volume >= 1000 ? `${Math.round(g.volume/1000)}k` : String(g.volume);
-      s7.addText(`${volLabel}/mo`,{x:9.2,y:y+0.08,w:0.28,h:0.26,fontSize:8,bold:true,color:isTop?C.white:C.red,fontFace:"Calibri",align:"right",valign:"middle",margin:0});
+    // Practice area rows
+    PAs.slice(0,7).forEach((pa,i)=>{
+      const y=2.38+i*0.44;
+      const bg=i%2===0?C.white:C.offWhite;
+      const sc = pa.statusColor || C.midGray;
+      s7.addShape(pres.shapes.RECTANGLE,{x:3.6,y,w:6.0,h:0.41,fill:{color:bg},line:{color:"E2EAF0",width:0.3}});
+      s7.addText(pa.label,{x:3.68,y:y+0.08,w:2.55,h:0.26,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",valign:"middle",margin:0});
+      const hubIcon = pa.hubCount>0?"✓":"✗";
+      const hubColor = pa.hubCount>0?C.emerald:C.red;
+      s7.addText(hubIcon,{x:6.32,y:y+0.08,w:0.5,h:0.26,fontSize:12,bold:true,color:hubColor,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+      const subColor = pa.subHubCount>=3?C.emerald:pa.subHubCount>=1?"F5A623":C.red;
+      s7.addText(String(pa.subHubCount),{x:6.86,y:y+0.08,w:0.7,h:0.26,fontSize:11,bold:true,color:subColor,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+      const spokeColor = pa.spokeCount>=5?C.emerald:pa.spokeCount>=2?"F5A623":C.red;
+      s7.addText(String(pa.spokeCount),{x:7.6,y:y+0.08,w:0.6,h:0.26,fontSize:11,bold:true,color:spokeColor,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+      s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:8.26,y:y+0.09,w:1.28,h:0.24,fill:{color:sc},line:{color:sc,width:0},rectRadius:0.04});
+      s7.addText(pa.status,{x:8.26,y:y+0.09,w:1.28,h:0.24,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
     });
 
     // Legend
-    s7.addShape(pres.shapes.RECTANGLE,{x:3.6,y:5.66,w:0.14,h:0.14,fill:{color:C.red},line:{color:C.red,width:0}});
-    s7.addText("Monthly search volume competitors capture — you don't",{x:3.78,y:5.64,w:5.7,h:0.18,fontSize:8,color:C.midGray,fontFace:"Calibri",margin:0});
+    [[C.emerald,"Hub = main service page",3.6],["F5A623","Sub-hubs = topic clusters",5.5],[C.lightBlue,"Spokes = supporting pages",7.4]].forEach(([col,lbl,x])=>{
+      s7.addShape(pres.shapes.RECTANGLE,{x,y:5.48,w:0.12,h:0.12,fill:{color:col},line:{color:col,width:0}});
+      s7.addText(lbl,{x:x+0.16,y:5.46,w:1.7,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri",margin:0});
+    });
 
   } else {
-    // No gap data — show content quality metrics from SF instead
-    s7.addText("CONTENT QUALITY AUDIT",{x:3.6,y:1.82,w:5.9,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
-    const issues7 = [
-      {label:"Titles too long",     val:SF.titlesOver60||0,    total:totalHtml7},
-      {label:"Duplicate meta desc", val:SF.metaDuplicate||0,   total:totalHtml7},
-      {label:"Meta desc too long",  val:SF.metaOver155||0,     total:totalHtml7},
-      {label:"Low content pages",   val:SF.lowContentPages||0, total:totalHtml7},
-      {label:"Hard to read",        val:SF.readabilityHard||0, total:totalHtml7},
-      {label:"Missing alt text",    val:SF.missingAltText||0,  total:totalHtml7},
-      {label:"Missing canonicals",  val:SF.missingCanonical||0,total:totalHtml7},
-      {label:"Redirects",           val:SF.redirects3xx||0,    total:SF.totalUrlsCrawled||0},
-      {label:"4xx errors",          val:SF.errors4xx||0,       total:SF.totalUrlsCrawled||0},
-    ];
-    issues7.forEach((iss,i)=>{
-      const col=i%3,row7=Math.floor(i/3);
-      const ix=3.6+col*1.98,iy=2.06+row7*0.96;
-      const tc=iss.val===0?C.emerald:iss.val>(iss.total*0.3)?C.red:"F5A623";
-      s7.addShape(pres.shapes.RECTANGLE,{x:ix,y:iy,w:1.88,h:0.86,fill:{color:C.white},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
-      s7.addShape(pres.shapes.RECTANGLE,{x:ix,y:iy,w:1.88,h:0.04,fill:{color:tc},line:{color:tc,width:0}});
-      s7.addText(String(iss.val),{x:ix+0.08,y:iy+0.08,w:0.6,h:0.44,fontSize:22,bold:true,color:tc,fontFace:"Calibri",valign:"middle",margin:0});
-      s7.addText(iss.label,{x:ix+0.08,y:iy+0.54,w:1.7,h:0.28,fontSize:8,color:C.midGray,fontFace:"Calibri",margin:0});
-    });
+    s7.addText("Upload Screaming Frog Internal HTML export\n(Internal tab → Export) to see practice area pyramid analysis.",{x:3.6,y:2.8,w:5.9,h:0.8,fontSize:11,color:C.midGray,fontFace:"Calibri",italic:true,align:"center"});
   }
 
+
   // Insight bar
-  const s7Insight = hasCG
-    ? `⚠️  Competitors rank for ${CG.totalGapKeywords} keywords you don't — top gap is "${(CG.clustered[0]||{}).label||""}" with ~${((CG.clustered[0]||{}).volume||0).toLocaleString()} monthly searches at stake.`
-    : !hasSF
-    ? "Upload a Screaming Frog Crawl Overview CSV for detailed content analysis. Add competitor domains to enable gap analysis."
-    : `📊  ${SF.htmlPages||0} HTML pages crawled — ${(SF.titlesOver60||0)+(SF.metaDuplicate||0)+(SF.lowContentPages||0)} content issues identified. Add SEMrush competitors to unlock gap analysis.`;
+  const weakAreas = (SF.practiceAreas||[]).filter(p=>p.status!=="Strong").map(p=>p.label);
+  const s7Insight = !hasSF
+    ? "Upload Screaming Frog Internal HTML export (Internal tab → Export) for practice area analysis."
+    : weakAreas.length > 0
+    ? `⚠️  ${weakAreas.length} practice area${weakAreas.length!==1?"s":""} lack topical depth: ${weakAreas.slice(0,3).join(", ")}${weakAreas.length>3?" and more":""} — competitors with full hub/spoke clusters will outrank individual pages.`
+    : `✅  ${SF.htmlPages||0} pages crawled — practice area content structure looks solid.`;
   s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:5.3,w:9.2,h:0.38,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
   s7.addText(s7Insight,{x:0.55,y:5.32,w:8.9,h:0.34,fontSize:9,color:C.white,fontFace:"Calibri",valign:"middle"});
   footer(s7,D);
