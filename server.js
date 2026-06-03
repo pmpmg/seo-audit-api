@@ -168,20 +168,56 @@ async function brightlocalCitationAudit(domain, businessName, location, reportId
         const resultsData = await resultsRes.json();
         console.log("BrightLocal results:", JSON.stringify(resultsData).slice(0, 300));
 
-        const r = resultsData?.response?.results || resultsData?.results || {};
-        const active   = r?.active?.length   || 0;
-        const pending  = r?.pending?.length  || 0;
-        const possible = r?.possible?.length || 0;
+        // Log full response so we can see exact structure
+        console.log("BrightLocal FULL results:", JSON.stringify(resultsData).slice(0, 800));
 
-        // NAP consistency = active / (active + pending + possible) * 100
-        const total = active + pending + possible;
-        const napConsistency = total > 0 ? Math.round((active / total) * 100) : 0;
+        // BrightLocal Citation Tracker response — handle multiple possible structures
+        const resp = resultsData?.response || resultsData || {};
+
+        // Structure 1: summary object with counts (newer API)
+        const summary = resp?.summary || resp?.results?.summary || {};
+        let found      = summary?.found      || summary?.citations_found    || 0;
+        let notFound   = summary?.not_found  || summary?.citations_missing  || 0;
+        let correct    = summary?.correct    || summary?.nap_correct        || 0;
+        let napErrors  = summary?.with_nap_errors || summary?.nap_errors   || 0;
+
+        // Structure 2: arrays (older API) — count array lengths
+        if (!found && !notFound) {
+          const results = resp?.results || {};
+          const active   = Array.isArray(results?.active)   ? results.active.length   : (results?.active   || 0);
+          const pending  = Array.isArray(results?.pending)  ? results.pending.length  : (results?.pending  || 0);
+          const possible = Array.isArray(results?.possible) ? results.possible.length : (results?.possible || 0);
+          found    = active;
+          notFound = pending + possible;
+          // Approximate correct from active (no error data in old structure)
+          correct  = active;
+          napErrors = 0;
+        }
+
+        // Structure 3: flat fields on response
+        if (!found && !notFound) {
+          found    = resp?.citations_found   || resp?.found    || 0;
+          notFound = resp?.citations_missing || resp?.not_found|| 0;
+          correct  = resp?.nap_correct       || resp?.correct  || found;
+          napErrors= resp?.nap_errors        || 0;
+        }
+
+        const totalCitations = found + notFound;
+        // citationCoverage = % of key directories where they appear
+        const citationCoverage = totalCitations > 0 ? Math.round((found / totalCitations) * 100) : 0;
+        // napConsistency = % of FOUND listings where NAP is correct
+        const napConsistency   = found > 0 ? Math.round((correct / found) * 100) : 0;
+
+        console.log(`BrightLocal parsed: found=${found}, notFound=${notFound}, correct=${correct}, napErrors=${napErrors}, coverage=${citationCoverage}%, napConsistency=${napConsistency}%`);
 
         return {
-          citationsFound:  active,
+          citationsFound:    found,
+          citationsMissing:  notFound,
           napConsistency,
-          activeListings:  active,
-          missingListings: pending + possible,
+          citationCoverage,
+          napErrors,
+          activeListings:    found,
+          missingListings:   notFound,
         };
       }
     }
@@ -190,12 +226,18 @@ async function brightlocalCitationAudit(domain, businessName, location, reportId
     console.log("BrightLocal: timed out waiting for report — fetching last results");
     const lastRes  = await fetch(`${BASE}/v2/ct/get-results?api-key=${key}&report-id=${REPORT_ID}`);
     const lastData = await lastRes.json();
-    const r = lastData?.response?.results || lastData?.results || {};
-    const active = r?.active?.length || 0;
-    const total  = active + (r?.pending?.length||0) + (r?.possible?.length||0);
+    console.log("BrightLocal timeout fallback FULL:", JSON.stringify(lastData).slice(0, 800));
+    const resp2   = lastData?.response || lastData || {};
+    const summary2= resp2?.summary || resp2?.results?.summary || {};
+    const found2  = summary2?.found || summary2?.citations_found || resp2?.citations_found || 0;
+    const notFound2 = summary2?.not_found || resp2?.citations_missing || 0;
+    const correct2  = summary2?.correct || found2;
+    const total2    = found2 + notFound2;
     return {
-      citationsFound: active,
-      napConsistency: total > 0 ? Math.round((active / total) * 100) : 0,
+      citationsFound:   found2,
+      citationsMissing: notFound2,
+      citationCoverage: total2 > 0 ? Math.round((found2/total2)*100) : 0,
+      napConsistency:   found2 > 0 ? Math.round((correct2/found2)*100) : 0,
     };
 
   } catch(e) {
@@ -660,7 +702,7 @@ async function buildPptx(data, narrative) {
   kpi(pres,s2,0.4, 1.95,2.15,2.1,`${D.siteHealth||0}/100`,"SITE HEALTH",    "Overall technical score (SEMrush)", scoreColor(D.siteHealth,BENCHMARKS.siteHealth));
   kpi(pres,s2,2.72,1.95,2.15,2.1,`${D.psPerformance||0}/100`,"PAGE SPEED", "Google PageSpeed mobile score",     scoreColor(D.psPerformance,BENCHMARKS.psPerformance));
   kpi(pres,s2,5.04,1.95,2.15,2.1,`${D.schemaErrors||0}`,"SCHEMA ERRORS",   "One broken template, sitewide",    D.schemaErrors>0?C.red:C.emerald);
-  kpi(pres,s2,7.36,1.95,2.15,2.1,`${D.napConsistency||0}%`,"NAP CONSISTENCY","Local citation accuracy",        scoreColor(D.napConsistency,BENCHMARKS.napConsistency));
+  kpi(pres,s2,7.36,1.95,2.15,2.1,D.citationsFound!=null?`${D.citationsFound} / ${(D.citationsFound||0)+(D.citationsMissing||0)}`:"—","NAP CONSISTENCY","Citations found vs. total checked", scoreColor(D.citationCoverage||D.napConsistency,BENCHMARKS.napConsistency));
   s2.addShape(pres.shapes.RECTANGLE,{x:0.4,y:4.22,w:9.2,h:0.65,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
   s2.addText(`💡  ${narrative.executiveSummary||"Key opportunities identified across technical SEO, page speed, and local search."}`,{x:0.6,y:4.27,w:8.8,h:0.55,fontSize:10,color:C.white,fontFace:"Calibri"});
   footer(s2,D);
@@ -817,7 +859,7 @@ async function buildPptx(data, narrative) {
     { label:"Trust Flow",         client:D.trustFlow,        comp1:competitors[0]?.trustFlow,    comp2:competitors[1]?.trustFlow,    bench:BENCHMARKS.trustFlow },
     { label:"Citation Flow",      client:D.citationFlow,     comp1:competitors[0]?.citationFlow, comp2:competitors[1]?.citationFlow, bench:BENCHMARKS.citationFlow },
     { label:"Referring Domains",  client:D.referringDomains, comp1:competitors[0]?.referringDomains,comp2:competitors[1]?.referringDomains,bench:BENCHMARKS.referringDomains },
-    { label:"NAP Consistency",    client:`${D.napConsistency||0}%`, comp1:competitors[0]?.napConsistency?`${competitors[0].napConsistency}%`:null, comp2:null, bench:BENCHMARKS.napConsistency, suffix:"%" },
+    { label:"NAP Consistency",    client:D.citationsFound!=null?`${D.citationsFound} / ${(D.citationsFound||0)+(D.citationsMissing||0)}`:"—", comp1:null, comp2:null, bench:BENCHMARKS.napConsistency, suffix:"" },
     { label:"Citations Found",    client:D.citationsFound,   comp1:null,                         comp2:null,                         bench:BENCHMARKS.citationsFound },
     { label:"Local Rank Avg",     client:`#${D.localRankAvg||"—"}`, comp1:competitors[0]?.localRank?`#${competitors[0].localRank}`:null,comp2:competitors[1]?.localRank?`#${competitors[1].localRank}`:null,bench:BENCHMARKS.localRankAvg },
   ];
@@ -1022,6 +1064,9 @@ async function buildPptx(data, narrative) {
 
 // GET /debug — shows env config status (no secret values)
 app.get("/debug", (req, res) => res.redirect("/version"));
+
+app.get("/v", (req, res) => res.redirect("/version"));
+app.get("/status", (req, res) => res.redirect("/version"));
 
 app.get("/version", (req, res) => {
   const fs = require("fs");
