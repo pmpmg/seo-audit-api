@@ -915,17 +915,14 @@ async function buildPptx(data, narrative) {
     s7.addText(r.label,{x,y:1.78,w:0.8,h:0.16,fontSize:6,color:C.midGray,fontFace:"Calibri",align:"center",margin:0});
   });
 
-  // Practice area pyramid table — with optional competitor comparison
-  const PAs    = SF.practiceAreas || [];
-  const C1PAs  = (D.sfComp1?.practiceAreas || []);
-  const C2PAs  = (D.sfComp2?.practiceAreas || []);
-  const hasC1  = C1PAs.length > 0;
-  const PAs    = SF.practiceAreas || [];
-  const C1PAs  = (D.sfComp1?.practiceAreas || []);
-  const C2PAs  = (D.sfComp2?.practiceAreas || []);
-  const hasC1  = C1PAs.length > 0;
-  const hasC2  = C2PAs.length > 0;
-  const hasComps7 = hasC1 || hasC2;
+// Practice area pyramid table — with optional competitor comparison
+const PAs = SF.practiceAreas || [];
+const C1PAs = D.sfComp1?.practiceAreas || [];
+const C2PAs = D.sfComp2?.practiceAreas || [];
+
+const hasC1 = C1PAs.length > 0;
+const hasC2 = C2PAs.length > 0;
+const hasComps7 = hasC1 || hasC2;
 
   s7.addText("PRACTICE AREA CONTENT PYRAMID",{x:0.5,y:1.62,w:9.0,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
 
