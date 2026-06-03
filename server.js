@@ -197,14 +197,14 @@ async function brightlocalCitationAudit(domain, businessName, reportId, location
         console.log(`BrightLocal: found=${found}, notFound=${notFound}, total=${total}, napErrors=${napErrorCount}, keyCitationScore=${keyCitationScore}`);
 
         return {
-          citationsFound:    found,
-          citationsMissing:  notFound,
-          citationsTotal:    total,
-          napErrors:         napErrorCount,
-          napCorrect:        correct,
-          keyCitationScore,
-          activeListings:    found,
-          missingListings:   notFound,
+          citationsFound:    parseInt(found)||0,
+          citationsMissing:  parseInt(notFound)||0,
+          citationsTotal:    parseInt(total)||0,
+          napErrors:         parseInt(napErrorCount)||0,
+          napCorrect:        parseInt(correct)||0,
+          keyCitationScore:  keyCitationScore ? parseInt(keyCitationScore)||null : null,
+          activeListings:    parseInt(found)||0,
+          missingListings:   parseInt(notFound)||0,
         };
       }
     }
@@ -356,6 +356,10 @@ CRITICAL RULES:
 - Use plain language a law firm partner can understand — no jargon.
 - Keep all text concise — titles under 8 words, body text under 40 words.
 - Base ALL findings strictly on the numbers provided. Do not invent statistics.
+- NEVER invent or calculate percentages (e.g. "100% NAP consistency") — only use exact numbers from the data provided.
+- For NAP/citations: use citationsFound, citationsTotal, napErrors exactly as given. Never derive percentages from them.
+- If a data field is 0 or missing, do not mention it as a positive. Find a different genuine positive to highlight.
+- whatIsWorking items must reference a specific number from the audit data, not a derived or assumed statistic.
 
 Return ONLY valid JSON, no markdown:
 {
@@ -688,7 +692,13 @@ async function buildPptx(data, narrative) {
   kpi(pres,s2,0.4, 1.95,2.15,2.1,`${D.siteHealth||0}/100`,"SITE HEALTH",    "Overall technical score (SEMrush)", scoreColor(D.siteHealth,BENCHMARKS.siteHealth));
   kpi(pres,s2,2.72,1.95,2.15,2.1,`${D.psPerformance||0}/100`,"PAGE SPEED", "Google PageSpeed mobile score",     scoreColor(D.psPerformance,BENCHMARKS.psPerformance));
   kpi(pres,s2,5.04,1.95,2.15,2.1,`${D.schemaErrors||0}`,"SCHEMA ERRORS",   "One broken template, sitewide",    D.schemaErrors>0?C.red:C.emerald);
-  kpi(pres,s2,7.36,1.95,2.15,2.1,D.keyCitationScore!=null?`${D.keyCitationScore}/100`:D.citationsFound!=null?`${D.citationsFound}/${D.citationsTotal||"?"}`:"—","CITATION SCORE","BrightLocal key citation score", scoreColor(D.keyCitationScore,{good:70,label:"70+",note:"Competitive for law firms"}));
+  (() => {
+    const cf = parseInt(D.citationsFound)||0;
+    const ct = parseInt(D.citationsTotal)||0;
+    const ks = parseInt(D.keyCitationScore)||null;
+    const val = ks ? `${ks}/100` : cf ? `${cf} / ${ct||"?"}` : "—";
+    kpi(pres,s2,7.36,1.95,2.15,2.1,val,"CITATION SCORE","BrightLocal key citation score", scoreColor(ks,{good:70,label:"70+",note:"Competitive for law firms"}));
+  })();
   s2.addShape(pres.shapes.RECTANGLE,{x:0.4,y:4.22,w:9.2,h:0.65,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
   s2.addText(`💡  ${narrative.executiveSummary||"Key opportunities identified across technical SEO, page speed, and local search."}`,{x:0.6,y:4.27,w:8.8,h:0.55,fontSize:10,color:C.white,fontFace:"Calibri"});
   footer(s2,D);
@@ -846,7 +856,7 @@ async function buildPptx(data, narrative) {
     { label:"Citation Flow",      client:D.citationFlow,     comp1:competitors[0]?.citationFlow, comp2:competitors[1]?.citationFlow, bench:BENCHMARKS.citationFlow },
     { label:"Referring Domains",  client:D.referringDomains, comp1:competitors[0]?.referringDomains,comp2:competitors[1]?.referringDomains,bench:BENCHMARKS.referringDomains },
     { label:"Citation Score",      client:D.keyCitationScore!=null?`${D.keyCitationScore}/100`:"—", comp1:null, comp2:null, bench:{label:"70+", note:"Competitive"}, suffix:"" },
-    { label:"Citations Found",     client:D.citationsFound!=null?`${D.citationsFound} of ${D.citationsTotal||"?"}`:D.citationsFound||"—", comp1:null, comp2:null, bench:BENCHMARKS.citationsFound },
+    { label:"Citations Found",     client:(parseInt(D.citationsFound)||0) > 0 ? `${parseInt(D.citationsFound)} of ${parseInt(D.citationsTotal)||"?"}` : "—", comp1:null, comp2:null, bench:BENCHMARKS.citationsFound },
     { label:"NAP Errors",          client:D.napErrors!=null?String(D.napErrors):"—", comp1:null, comp2:null, bench:{label:"0",note:"All listings accurate"}, suffix:"" },
     
     { label:"Local Rank Avg",     client:`#${D.localRankAvg||"—"}`, comp1:competitors[0]?.localRank?`#${competitors[0].localRank}`:null,comp2:competitors[1]?.localRank?`#${competitors[1].localRank}`:null,bench:BENCHMARKS.localRankAvg },
