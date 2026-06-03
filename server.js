@@ -163,10 +163,11 @@ async function brightlocalCitationAudit(domain, businessName, reportId, location
       const status = report?.status || report?.report_status || "";
 
       if (status === "complete" || status === "Complete") {
-        // Step 3: Get results
-        const resultsRes  = await fetch(`${BASE}/v2/ct/get-results?api-key=${key}&report-id=${REPORT_ID}`);
+        // Step 3: Get KEY citation results — matches BrightLocal "Key Citations" tab
+        // Key citations are the important directories (Google, Yelp, Avvo etc) — scored out of 100
+        const resultsRes  = await fetch(`${BASE}/v2/ct/get-results?api-key=${key}&report-id=${REPORT_ID}&type=key`);
         const resultsData = await resultsRes.json();
-        console.log("BrightLocal results:", JSON.stringify(resultsData).slice(0, 300));
+        console.log("BrightLocal KEY results FULL:", JSON.stringify(resultsData).slice(0, 600));
 
         // Parse results — active=found, pending+possible=not found
         const results  = resultsData?.response?.results || {};
@@ -211,7 +212,7 @@ async function brightlocalCitationAudit(domain, businessName, reportId, location
 
     // If not complete after 90s, return last known data from the report
     console.log("BrightLocal: timed out waiting for report — fetching last results");
-    const lastRes  = await fetch(`${BASE}/v2/ct/get-results?api-key=${key}&report-id=${REPORT_ID}`);
+    const lastRes  = await fetch(`${BASE}/v2/ct/get-results?api-key=${key}&report-id=${REPORT_ID}&type=key`);
     const lastData = await lastRes.json();
     const results2  = lastData?.response?.results || {};
     const found2    = Array.isArray(results2?.active)   ? results2.active.length   : 0;
