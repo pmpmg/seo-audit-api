@@ -898,10 +898,10 @@ async function buildPptx(data, narrative) {
   const PAsWeak = (SF.practiceAreas||[]).filter(p=>p.status!=="Strong").length;
   const PAsTotal = (SF.practiceAreas||[]).length;
   const s7Title = s7Pages && PAsTotal
-    ? `${s7Pages} pages. ${PAsWeak} of ${PAsTotal} practice areas lack topical depth.`
+    ? `${PAsWeak} of ${PAsTotal} practice areas lack topical authority.`
     : s7Pages
-    ? `${s7Pages} pages crawled. Here's what the content tells us.`
-    : "Content is there. But is Google finding it?";
+    ? `${s7Pages} pages crawled — here's the content story.`
+    : "Content is there. But is it working?";
   stit(s7, s7Title);
 
   // ── LEFT PANEL: Site architecture + keyword rankings ──────────
@@ -953,7 +953,7 @@ async function buildPptx(data, narrative) {
     });
 
     // Practice area rows
-    PAs.slice(0,7).forEach((pa,i)=>{
+    PAs.slice(0,6).forEach((pa,i)=>{
       const y=2.38+i*0.44;
       const bg=i%2===0?C.white:C.offWhite;
       const sc = pa.statusColor || C.midGray;
@@ -988,8 +988,8 @@ async function buildPptx(data, narrative) {
     : weakAreas.length > 0
     ? `⚠️  ${weakAreas.length} practice area${weakAreas.length!==1?"s":""} lack topical depth: ${weakAreas.slice(0,3).join(", ")}${weakAreas.length>3?" and more":""} — competitors with full hub/spoke clusters will outrank individual pages.`
     : `✅  ${SF.htmlPages||0} pages crawled — practice area content structure looks solid.`;
-  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:5.3,w:9.2,h:0.38,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
-  s7.addText(s7Insight,{x:0.55,y:5.32,w:8.9,h:0.34,fontSize:9,color:C.white,fontFace:"Calibri",valign:"middle"});
+  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:5.18,w:9.2,h:0.34,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
+  s7.addText(s7Insight,{x:0.55,y:5.19,w:8.9,h:0.32,fontSize:9,color:C.white,fontFace:"Calibri",valign:"middle"});
   footer(s7,D);
 
   // S8 PRIORITY RECOMMENDATIONS
