@@ -167,16 +167,41 @@
     </div>
   </div>
 
-  <!-- SCREAMING FROG CSV UPLOAD -->
+  <!-- SCREAMING FROG CSV UPLOADS -->
   <div class="card">
-    <div class="card-header blue">SCREAMING FROG — Upload Internal HTML Export</div>
+    <div class="card-header blue">SCREAMING FROG — Internal HTML Exports</div>
     <div class="card-body">
-      <p style="font-size:14px;color:#6B7A8D;margin-bottom:8px;">In Screaming Frog Desktop, after running a crawl click the <strong>Internal</strong> tab at the top, then click the <strong>Export</strong> button. Upload that CSV here.</p>
-      <p style="font-size:13px;color:#009ABF;margin-bottom:10px;">Unlocks: practice area pyramid · content depth · page architecture · topical authority gaps · title &amp; meta issues.</p>
-      <div class="upload-area" id="sfUploadArea" onclick="document.getElementById('sfFile').click()">
-        <input type="file" id="sfFile" accept=".csv" style="display:none" onchange="handleSfFileSelect(this)">
-        <p class="upload-label"><strong>Click to upload Screaming Frog Internal HTML Export</strong><br>Internal tab → Export button · or drag and drop here</p>
-        <p id="sfFileName" style="font-size:14px;color:#00684F;margin-top:6px;display:none;"></p>
+      <p style="font-size:14px;color:#6B7A8D;margin-bottom:6px;">In Screaming Frog, after crawling each site click the <strong>Internal</strong> tab → <strong>Export</strong> button. Upload all three for a full competitive comparison.</p>
+      <p style="font-size:13px;color:#009ABF;margin-bottom:14px;">Unlocks: practice area pyramid · content depth · topical authority gaps · competitor comparison.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+
+        <div>
+          <p style="font-size:13px;font-weight:bold;color:#12284C;margin-bottom:6px;">📋 Prospect Site</p>
+          <div class="upload-area" id="sfUploadArea" onclick="document.getElementById('sfFile').click()">
+            <input type="file" id="sfFile" accept=".csv" style="display:none" onchange="handleSfFileSelect(this,'sfUploadArea','sfFileName')">
+            <p class="upload-label"><strong>Upload Prospect CSV</strong><br>Required for analysis</p>
+            <p id="sfFileName" style="font-size:13px;color:#00684F;margin-top:4px;display:none;"></p>
+          </div>
+        </div>
+
+        <div>
+          <p style="font-size:13px;font-weight:bold;color:#12284C;margin-bottom:6px;">🥊 Competitor 1</p>
+          <div class="upload-area" id="sfComp1Area" onclick="document.getElementById('sfComp1File').click()">
+            <input type="file" id="sfComp1File" accept=".csv" style="display:none" onchange="handleSfFileSelect(this,'sfComp1Area','sfComp1Name')">
+            <p class="upload-label"><strong>Upload Competitor 1 CSV</strong><br>Optional</p>
+            <p id="sfComp1Name" style="font-size:13px;color:#00684F;margin-top:4px;display:none;"></p>
+          </div>
+        </div>
+
+        <div>
+          <p style="font-size:13px;font-weight:bold;color:#12284C;margin-bottom:6px;">🥊 Competitor 2</p>
+          <div class="upload-area" id="sfComp2Area" onclick="document.getElementById('sfComp2File').click()">
+            <input type="file" id="sfComp2File" accept=".csv" style="display:none" onchange="handleSfFileSelect(this,'sfComp2Area','sfComp2Name')">
+            <p class="upload-label"><strong>Upload Competitor 2 CSV</strong><br>Optional</p>
+            <p id="sfComp2Name" style="font-size:13px;color:#00684F;margin-top:4px;display:none;"></p>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -204,6 +229,8 @@
 const REQUIRED = ['clientName','domain','preparedBy','semrushProjectId'];
 let majesticFile = null;
 let screamingFrogFile = null;
+let sfComp1File = null;
+let sfComp2File = null;
 
 function handleFileSelect(input) {
   if (input.files && input.files[0]) {
@@ -214,12 +241,15 @@ function handleFileSelect(input) {
   }
 }
 
-function handleSfFileSelect(input) {
+function handleSfFileSelect(input, areaId, nameId) {
   if (input.files && input.files[0]) {
-    screamingFrogFile = input.files[0];
-    document.getElementById('sfUploadArea').classList.add('has-file');
-    document.getElementById('sfFileName').textContent = '✓ ' + screamingFrogFile.name;
-    document.getElementById('sfFileName').style.display = 'block';
+    const file = input.files[0];
+    if (areaId === 'sfUploadArea')  screamingFrogFile = file;
+    if (areaId === 'sfComp1Area')   sfComp1File = file;
+    if (areaId === 'sfComp2Area')   sfComp2File = file;
+    document.getElementById(areaId).classList.add('has-file');
+    document.getElementById(nameId).textContent = '✓ ' + file.name;
+    document.getElementById(nameId).style.display = 'block';
   }
 }
 
@@ -238,19 +268,24 @@ uploadArea.addEventListener('drop', e => {
   }
 });
 
-// Drag and drop — Screaming Frog
-const sfUploadArea = document.getElementById('sfUploadArea');
-sfUploadArea.addEventListener('dragover', e => { e.preventDefault(); sfUploadArea.style.borderColor='#009ABF'; });
-sfUploadArea.addEventListener('dragleave', () => { sfUploadArea.style.borderColor='#D0D8E4'; });
-sfUploadArea.addEventListener('drop', e => {
-  e.preventDefault();
-  const file = e.dataTransfer.files[0];
-  if (file && file.name.endsWith('.csv')) {
-    screamingFrogFile = file;
-    sfUploadArea.classList.add('has-file');
-    document.getElementById('sfFileName').textContent = '✓ ' + file.name;
-    document.getElementById('sfFileName').style.display = 'block';
-  }
+// Drag and drop — Screaming Frog boxes
+[['sfUploadArea','sfFileName','prospect'],['sfComp1Area','sfComp1Name','comp1'],['sfComp2Area','sfComp2Name','comp2']].forEach(([areaId, nameId, type]) => {
+  const area = document.getElementById(areaId);
+  if (!area) return;
+  area.addEventListener('dragover', e => { e.preventDefault(); area.style.borderColor='#009ABF'; });
+  area.addEventListener('dragleave', () => { area.style.borderColor='#D0D8E4'; });
+  area.addEventListener('drop', e => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith('.csv')) {
+      if (type==='prospect') screamingFrogFile = file;
+      if (type==='comp1')    sfComp1File = file;
+      if (type==='comp2')    sfComp2File = file;
+      area.classList.add('has-file');
+      document.getElementById(nameId).textContent = '✓ ' + file.name;
+      document.getElementById(nameId).style.display = 'block';
+    }
+  });
 });
 
 // Total estimated duration in ms (~2.5 mins with BrightLocal)
@@ -385,8 +420,10 @@ async function generate() {
 
   const formData = new FormData();
   formData.append('data', JSON.stringify(data));
-  if (majesticFile)      formData.append('majesticCsv',      majesticFile);
-  if (screamingFrogFile) formData.append('screamingFrogCsv', screamingFrogFile);
+  if (majesticFile)      formData.append('majesticCsv',        majesticFile);
+  if (screamingFrogFile) formData.append('screamingFrogCsv',   screamingFrogFile);
+  if (sfComp1File)       formData.append('screamingFrogComp1', sfComp1File);
+  if (sfComp2File)       formData.append('screamingFrogComp2', sfComp2File);
 
   try {
     // Step 1: Submit job — returns immediately with a job ID
