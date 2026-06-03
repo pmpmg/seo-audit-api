@@ -344,7 +344,9 @@ async function fetchPageSpeed(domain) {
 
 // Claude narrative
 async function getNarrative(data) {
+  const practiceAreaContext = data.practiceAreas ? `The firm's primary practice areas are: ${data.practiceAreas}. Focus all recommendations on these areas.` : "";
   const prompt = `You are an SEO analyst preparing a sales audit for a law firm prospect.
+${practiceAreaContext}
 CRITICAL RULES:
 - NEVER invent, guess, or name specific competitors. Only reference competitors if their domain appears in the data.
 - Use plain language a law firm partner can understand — no jargon.
@@ -375,12 +377,7 @@ Return ONLY valid JSON, no markdown:
     {"n":"5","title":"...","body":"...","impact":"Med","effort":"Low"},
     {"n":"6","title":"...","body":"...","impact":"High","effort":"High"}
   ],
-  "sequence": [
-    {"priority":"1","action":"Most impactful first step","why":"One sentence on why this goes first."},
-    {"priority":"2","action":"Second step","why":"One sentence."},
-    {"priority":"3","action":"Third step","why":"One sentence."},
-    {"priority":"4","action":"Ongoing","why":"One sentence on what requires continuous attention."}
-  ]
+  "sequence": []
 }
 AUDIT DATA: ${JSON.stringify(data)}`;
 
@@ -720,7 +717,7 @@ async function buildPptx(data, narrative) {
   }
   footer(s3,D);
 
-  // S4 TOP ISSUES — data-driven, replaces "Three Patterns" narrative slide
+  // S4 GROWTH OPPORTUNITIES — Content Gap + Link Authority
   const s4=pres.addSlide(); s4.background={color:C.white};
   slbl(s4,"WHAT'S COSTING YOU CLIENTS");
   stit(s4,"The biggest opportunities, by the numbers.");
@@ -811,77 +808,79 @@ async function buildPptx(data, narrative) {
   });
   footer(s5,D);
 
-  // S6 LOCAL SEO WITH BENCHMARKS + COMPETITORS
+  // S6 LOCAL & AUTHORITY SNAPSHOT
   const s6=pres.addSlide(); s6.background={color:C.white};
-  slbl(s6,"LOCAL SEO SNAPSHOT · BrightLocal + Majestic + SEMrush");
-  stit(s6,"Local search is where law firm clients start.");
+  slbl(s6,"AUTHORITY & LOCAL SEO · Majestic + SEMrush + BrightLocal");
+  stit(s6,"How strong is the site's authority?");
 
-  // Comparison table
-  // Merge SEMrush competitors with Majestic competitor backlink data
-  const semrushComps   = D.competitors || [];
-  const majesticComps  = D.majesticCompetitors || [];
-  // Merge: try to match by domain, fallback to index order
-  const competitors = semrushComps.map((c,i) => {
-    const domainMatch = majesticComps.find(m => m.domain && c.domain && m.domain.replace(/^www\./,"") === c.domain.replace(/^www\./,""));
-    return { ...c, ...(domainMatch || majesticComps[i] || {}) };
+  const majesticComps6 = D.majesticCompetitors || [];
+  const semrushComps6  = D.competitors || [];
+  // Merge competitor data
+  const comps6 = semrushComps6.map((c,i)=>{
+    const m = majesticComps6.find(m=>m.domain&&c.domain&&m.domain.replace(/^www\./,"")===c.domain.replace(/^www\./,"")) || majesticComps6[i] || {};
+    return {...c,...m};
   });
-  // If no SEMrush comps but have Majestic comps, use those directly
-  if (!competitors.length && majesticComps.length) {
-    competitors.push(...majesticComps);
-  }
-  const hasComps = competitors.length > 0;
+  if (!comps6.length && majesticComps6.length) comps6.push(...majesticComps6);
+  const hasComps6 = comps6.length > 0;
 
-  // Header row
-  const colW   = hasComps ? 2.1 : 3.0;
-  const cols   = hasComps
-    ? ["METRIC","YOUR SITE","COMPETITOR 1","COMPETITOR 2","BENCHMARK"]
-    : ["METRIC","YOUR SITE","BENCHMARK","TARGET"];
-  const colXs  = hasComps
-    ? [0.4, 2.55, 4.7, 6.85, 8.5]
-    : [0.4, 3.5,  6.0, 8.0];
+  // ── LEFT: Authority metrics ─────────────────────────────────
+  s6.addShape(pres.shapes.RECTANGLE,{x:0.4,y:1.52,w:5.6,h:3.8,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+  s6.addText("LINK AUTHORITY",{x:0.5,y:1.62,w:5.4,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
 
-  // Draw header
-  s6.addShape(pres.shapes.RECTANGLE,{x:0.4,y:1.5,w:9.2,h:0.35,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
-  cols.forEach((c,i)=>{
-    s6.addText(c,{x:colXs[i],y:1.52,w:colW,h:0.3,fontSize:8,bold:true,color:C.white,fontFace:"Calibri",margin:0});
-  });
+  // Header
+  s6.addShape(pres.shapes.RECTANGLE,{x:0.5,y:1.86,w:5.4,h:0.28,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
+  s6.addText("METRIC",      {x:0.58,y:1.88,w:1.6,h:0.24,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",valign:"middle",margin:0});
+  s6.addText("YOURS",       {x:2.22,y:1.88,w:1.0,h:0.24,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+  s6.addText(hasComps6?comps6[0]?.domain?.replace("www.","").slice(0,12)||"COMP 1":"BENCHMARK",{x:3.26,y:1.88,w:1.2,h:0.24,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+  if(hasComps6&&comps6[1]) s6.addText(comps6[1]?.domain?.replace("www.","").slice(0,12)||"COMP 2",{x:4.5,y:1.88,w:1.3,h:0.24,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+  else s6.addText("BENCHMARK",{x:4.5,y:1.88,w:1.3,h:0.24,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
 
-  const rows = [
-    { label:"Trust Flow",         client:D.trustFlow,        comp1:competitors[0]?.trustFlow,    comp2:competitors[1]?.trustFlow,    bench:BENCHMARKS.trustFlow },
-    { label:"Citation Flow",      client:D.citationFlow,     comp1:competitors[0]?.citationFlow, comp2:competitors[1]?.citationFlow, bench:BENCHMARKS.citationFlow },
-    { label:"Referring Domains",  client:D.referringDomains, comp1:competitors[0]?.referringDomains,comp2:competitors[1]?.referringDomains,bench:BENCHMARKS.referringDomains },
-    { label:"Citation Score",      client:D.keyCitationScore!=null?`${D.keyCitationScore}/100`:"—", comp1:null, comp2:null, bench:{label:"70+", note:"Competitive"}, suffix:"" },
-    { label:"Citations Found",     client:(parseInt(D.citationsFound)||0) > 0 ? `${parseInt(D.citationsFound)} of ${parseInt(D.citationsTotal)||"?"}` : "—", comp1:null, comp2:null, bench:BENCHMARKS.citationsFound },
-    { label:"NAP Errors",          client:D.napErrors!=null?String(D.napErrors):"—", comp1:null, comp2:null, bench:{label:"0",note:"All listings accurate"}, suffix:"" },
-    
-    { label:"Local Rank Avg",     client:`#${D.localRankAvg||"—"}`, comp1:competitors[0]?.localRank?`#${competitors[0].localRank}`:null,comp2:competitors[1]?.localRank?`#${competitors[1].localRank}`:null,bench:BENCHMARKS.localRankAvg },
+  const authRows = [
+    {label:"Trust Flow",     yours:D.trustFlow,        c1:comps6[0]?.trustFlow,    c2:comps6[1]?.trustFlow,    bench:"35+", note:"Editorial quality"},
+    {label:"Citation Flow",  yours:D.citationFlow,     c1:comps6[0]?.citationFlow, c2:comps6[1]?.citationFlow, bench:"40+", note:"Total link volume"},
+    {label:"Ref. Domains",   yours:D.referringDomains, c1:comps6[0]?.referringDomains,c2:comps6[1]?.referringDomains,bench:"200+",note:"Unique linking sites"},
+    {label:"Organic Keywords",yours:D.organicAudit?.totalKeywords||"—",c1:comps6[0]?.organicKeywords||"—",c2:comps6[1]?.organicKeywords||"—",bench:"500+",note:"Keywords ranking"},
+    {label:"Organic Traffic", yours:D.organicAudit?.top10||"—",c1:"—",c2:"—",bench:"Top 10",note:"Keywords in top 10"},
   ];
 
-  rows.forEach((row,i)=>{
-    const y=1.88+i*0.46;
+  authRows.forEach((r,i)=>{
+    const y=2.18+i*0.56;
     const bg=i%2===0?C.white:C.offWhite;
-    s6.addShape(pres.shapes.RECTANGLE,{x:0.4,y,w:9.2,h:0.43,fill:{color:bg},line:{color:"E2EAF0",width:0.3}});
-    s6.addText(row.label,{x:colXs[0],y:y+0.07,w:2.0,h:0.32,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
-    const clientColor=scoreColor(parseFloat(String(row.client)),row.bench);
-    s6.addText(String(row.client||"—"),{x:colXs[1],y:y+0.07,w:colW,h:0.32,fontSize:12,bold:true,color:clientColor,fontFace:"Calibri",margin:0});
-    if(hasComps){
-      s6.addText(String(row.comp1||"—"),{x:colXs[2],y:y+0.07,w:colW,h:0.32,fontSize:11,color:C.midGray,fontFace:"Calibri",margin:0});
-      s6.addText(String(row.comp2||"—"),{x:colXs[3],y:y+0.07,w:colW,h:0.32,fontSize:11,color:C.midGray,fontFace:"Calibri",margin:0});
-      s6.addText(row.bench?.label||"—",{x:colXs[4],y:y+0.07,w:1.5,h:0.32,fontSize:10,bold:true,color:C.emerald,fontFace:"Calibri",margin:0});
-    } else {
-      s6.addText(row.bench?.label||"—",{x:colXs[2],y:y+0.07,w:colW,h:0.32,fontSize:11,bold:true,color:C.emerald,fontFace:"Calibri",margin:0});
-      s6.addText(row.bench?.note||"",  {x:colXs[3],y:y+0.07,w:colW,h:0.32,fontSize:9,color:C.midGray,fontFace:"Calibri",italic:true,margin:0});
-    }
+    const yVal=parseInt(r.yours)||0;
+    const benchNum=parseInt(r.bench)||0;
+    const vc=yVal&&benchNum?(yVal>=benchNum?C.emerald:yVal>=(benchNum*0.7)?C.lightBlue:C.red):C.darkBlue;
+    s6.addShape(pres.shapes.RECTANGLE,{x:0.5,y,w:5.4,h:0.52,fill:{color:bg},line:{color:"E2EAF0",width:0.3}});
+    s6.addText(r.label,{x:0.58,y:y+0.06,w:1.5,h:0.22,fontSize:9,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
+    s6.addText(r.note, {x:0.58,y:y+0.3, w:1.5,h:0.18,fontSize:7,color:C.midGray,fontFace:"Calibri",margin:0});
+    s6.addText(String(r.yours||"—"),{x:2.22,y:y+0.1,w:1.0,h:0.32,fontSize:14,bold:true,color:vc,fontFace:"Calibri",align:"center",margin:0});
+    s6.addText(String(r.c1||"—"),  {x:3.26,y:y+0.1,w:1.2,h:0.32,fontSize:12,color:C.midGray,fontFace:"Calibri",align:"center",margin:0});
+    s6.addText(hasComps6&&r.c2?String(r.c2):r.bench,{x:4.5,y:y+0.1,w:1.3,h:0.32,fontSize:12,bold:!hasComps6||!r.c2,color:hasComps6&&r.c2?C.midGray:C.emerald,fontFace:"Calibri",align:"center",margin:0});
+  });
+
+  // ── RIGHT: Local SEO snapshot ───────────────────────────────
+  s6.addShape(pres.shapes.RECTANGLE,{x:6.2,y:1.52,w:3.4,h:3.8,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+  s6.addText("LOCAL SEO",{x:6.3,y:1.62,w:3.2,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
+
+  const localMetrics = [
+    {label:"Citation Score",  val:D.keyCitationScore!=null?`${D.keyCitationScore}/100`:"—", bench:"70+", note:"BrightLocal key score", color:D.keyCitationScore>=70?C.emerald:D.keyCitationScore>=50?C.lightBlue:C.red},
+    {label:"Citations Found", val:(parseInt(D.citationsFound)||0)>0?`${parseInt(D.citationsFound)} of ${parseInt(D.citationsTotal)||"?"}`:"—", bench:"38/38", note:"Key directories", color:C.darkBlue},
+    {label:"NAP Errors",      val:D.napErrors!=null?String(D.napErrors):"—", bench:"0", note:"Listing accuracy", color:parseInt(D.napErrors)===0?C.emerald:C.red},
+  ];
+
+  localMetrics.forEach((m,i)=>{
+    const y=1.9+i*1.1;
+    s6.addShape(pres.shapes.RECTANGLE,{x:6.3,y,w:3.2,h:0.96,fill:{color:C.white},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+    s6.addText(String(m.val),{x:6.38,y:y+0.08,w:2.0,h:0.48,fontSize:24,bold:true,color:m.color,fontFace:"Calibri",valign:"middle",margin:0});
+    s6.addText(m.label,{x:6.38,y:y+0.58,w:2.0,h:0.22,fontSize:9,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
+    s6.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:7.98,y:y+0.12,w:0.8,h:0.3,fill:{color:C.offWhite},line:{color:"E2EAF0",width:0.3},rectRadius:0.04});
+    s6.addText(`Goal:\n${m.bench}`,{x:7.98,y:y+0.12,w:0.8,h:0.3,fontSize:7,bold:true,color:C.emerald,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
   });
 
   // Legend
-  s6.addShape(pres.shapes.RECTANGLE,{x:0.4,y:5.12,w:9.2,h:0.15,fill:{color:C.offWhite},line:{color:"E2EAF0",width:0}});
-  s6.addShape(pres.shapes.RECTANGLE,{x:0.5,y:5.14,w:0.18,h:0.08,fill:{color:C.emerald},line:{color:C.emerald,width:0}});
-  s6.addText("At/above benchmark",{x:0.72,y:5.12,w:2.2,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri"});
-  s6.addShape(pres.shapes.RECTANGLE,{x:3.0,y:5.14,w:0.18,h:0.08,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
-  s6.addText("Close to benchmark",{x:3.22,y:5.12,w:2.0,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri"});
-  s6.addShape(pres.shapes.RECTANGLE,{x:5.4,y:5.14,w:0.18,h:0.08,fill:{color:C.red},line:{color:C.red,width:0}});
-  s6.addText("Below benchmark",{x:5.62,y:5.12,w:2.0,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri"});
+  [[C.emerald,"At/above benchmark",0.5],[C.lightBlue,"Close to benchmark",3.0],[C.red,"Below benchmark",5.5]].forEach(([col,lbl,x])=>{
+    s6.addShape(pres.shapes.RECTANGLE,{x,y:5.42,w:0.14,h:0.12,fill:{color:col},line:{color:col,width:0}});
+    s6.addText(lbl,{x:x+0.18,y:5.4,w:2.0,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri",margin:0});
+  });
   footer(s6,D);
 
   // S7 CONTENT AUTHORITY + COMPETITOR GAP
@@ -904,44 +903,23 @@ async function buildPptx(data, narrative) {
     : "Content is there. But is it working?";
   stit(s7, s7Title);
 
-  // ── LEFT PANEL: Site architecture + keyword rankings ──────────
-  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:1.52,w:2.9,h:3.5,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+  // ── FULL WIDTH: Practice area pyramid ───────────────────────────
+  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:1.52,w:9.2,h:3.5,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
 
-  // Keyword ranking chips
-  s7.addText("KEYWORD RANKINGS",{x:0.5,y:1.62,w:2.7,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
+  // Add keyword ranking summary as small chips in top-right
   [{label:"Top 3",val:OA.top3||0,color:C.emerald},{label:"Top 10",val:OA.top10||0,color:C.lightBlue},{label:"Top 20",val:OA.top20||0,color:C.midGray}]
   .forEach((r,i)=>{
-    const x=0.5+i*0.92;
-    s7.addShape(pres.shapes.RECTANGLE,{x,y:1.86,w:0.82,h:0.64,fill:{color:C.white},line:{color:"E2EAF0",width:0.3}});
-    s7.addText(String(r.val),{x,y:1.9,w:0.82,h:0.36,fontSize:18,bold:true,color:r.color,fontFace:"Calibri",align:"center",margin:0});
-    s7.addText(r.label,{x,y:2.26,w:0.82,h:0.2,fontSize:8,color:C.midGray,fontFace:"Calibri",align:"center",margin:0});
+    const x=6.8+i*0.9;
+    s7.addShape(pres.shapes.RECTANGLE,{x,y:1.56,w:0.8,h:0.42,fill:{color:C.white},line:{color:"E2EAF0",width:0.3}});
+    s7.addText(String(r.val),{x,y:1.58,w:0.8,h:0.22,fontSize:12,bold:true,color:r.color,fontFace:"Calibri",align:"center",margin:0});
+    s7.addText(r.label,{x,y:1.78,w:0.8,h:0.16,fontSize:6,color:C.midGray,fontFace:"Calibri",align:"center",margin:0});
   });
-
-  // Page architecture from Screaming Frog
-  s7.addText("PAGE ARCHITECTURE",{x:0.5,y:2.62,w:2.7,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
-  const dd = SF.depthDist || {};
-  const totalHtml7 = SF.htmlPages || 1;
-  [
-    {label:"Hub pages (depth 1)",  val:dd.d1||0,     note:"Top-level service/practice pages"},
-    {label:"Sub-hub (depth 2)",     val:dd.d2||0,     note:"Topic clusters & subtopics"},
-    {label:"Spoke pages (depth 3)", val:dd.d3||0,     note:"Supporting & geo-targeted content"},
-    {label:"Deep / blog (4+)",      val:dd.d4plus||0, note:"Long-tail, Q&A, blog posts"},
-  ].forEach((r,i)=>{
-    const y=2.86+i*0.52;
-    const barW = Math.max(0.04, Math.min(1.9, 1.9*(r.val/totalHtml7)));
-    const pct  = Math.round((r.val/totalHtml7)*100);
-    s7.addShape(pres.shapes.RECTANGLE,{x:0.5,y,w:2.7,h:0.44,fill:{color:C.white},line:{color:"E2EAF0",width:0.3}});
-    s7.addText(String(r.val),{x:0.56,y:y+0.04,w:0.42,h:0.36,fontSize:14,bold:true,color:C.darkBlue,fontFace:"Calibri",valign:"middle",margin:0});
-    s7.addText(r.label,{x:1.02,y:y+0.04,w:1.7,h:0.2,fontSize:8,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
-    s7.addShape(pres.shapes.RECTANGLE,{x:1.02,y:y+0.28,w:1.9,h:0.1,fill:{color:"E2EAF0"},line:{color:"E2EAF0",width:0}});
-    if(barW>0.04) s7.addShape(pres.shapes.RECTANGLE,{x:1.02,y:y+0.28,w:barW,h:0.1,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
-    s7.addText(`${pct}%`,{x:2.94,y:y+0.24,w:0.2,h:0.18,fontSize:7,color:C.midGray,fontFace:"Calibri",align:"right",margin:0});
-  });
-
-  // ── RIGHT PANEL: Competitor content gap ───────────────────────
-  s7.addShape(pres.shapes.RECTANGLE,{x:3.5,y:1.52,w:6.1,h:3.5,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
 
   // Practice area pyramid table — with optional competitor comparison
+  const PAs    = SF.practiceAreas || [];
+  const C1PAs  = (D.sfComp1?.practiceAreas || []);
+  const C2PAs  = (D.sfComp2?.practiceAreas || []);
+  const hasC1  = C1PAs.length > 0;
   const PAs    = SF.practiceAreas || [];
   const C1PAs  = (D.sfComp1?.practiceAreas || []);
   const C2PAs  = (D.sfComp2?.practiceAreas || []);
@@ -949,7 +927,7 @@ async function buildPptx(data, narrative) {
   const hasC2  = C2PAs.length > 0;
   const hasComps7 = hasC1 || hasC2;
 
-  s7.addText("PRACTICE AREA CONTENT PYRAMID",{x:3.6,y:1.62,w:6.0,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
+  s7.addText("PRACTICE AREA CONTENT PYRAMID",{x:0.5,y:1.62,w:9.0,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
 
   if (PAs.length > 0) {
     function compStatus(label, compPAs) {
@@ -960,10 +938,10 @@ async function buildPptx(data, narrative) {
     }
 
     const cols = hasComps7
-      ? [["PRACTICE AREA",3.68,2.0],["YOURS",5.74,0.88],["COMP 1",6.66,0.88],["COMP 2",7.58,0.88],["STATUS",8.5,1.1]]
-      : [["PRACTICE AREA",3.68,2.55],["HUB",6.32,0.5],["SUB-HUBS",6.86,0.7],["SPOKES",7.6,0.6],["STATUS",8.24,1.36]];
+      ? [["PRACTICE AREA",0.6,3.8],["YOURS",4.5,1.1],["COMP 1",5.66,1.1],["COMP 2",6.82,1.1],["STATUS",7.98,1.6]]
+      : [["PRACTICE AREA",0.6,5.0],["HUB",5.7,0.6],["SUB-HUBS",6.38,0.9],["SPOKES",7.34,0.8],["STATUS",8.2,1.4]];
 
-    s7.addShape(pres.shapes.RECTANGLE,{x:3.6,y:1.86,w:6.0,h:0.28,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
+    s7.addShape(pres.shapes.RECTANGLE,{x:0.5,y:1.86,w:9.1,h:0.28,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
     cols.forEach(([lbl,x,w])=>{
       s7.addText(lbl,{x,y:1.88,w,h:0.24,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",valign:"middle",margin:0});
     });
@@ -972,36 +950,36 @@ async function buildPptx(data, narrative) {
       const y=2.18+i*0.44;
       const bg=i%2===0?C.white:C.offWhite;
       const sc=pa.statusColor||C.midGray;
-      s7.addShape(pres.shapes.RECTANGLE,{x:3.6,y,w:6.0,h:0.41,fill:{color:bg},line:{color:"E2EAF0",width:0.3}});
-      s7.addText(pa.label,{x:3.68,y:y+0.08,w:cols[0][2],h:0.26,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",valign:"middle",margin:0});
+      s7.addShape(pres.shapes.RECTANGLE,{x:0.5,y,w:9.1,h:0.41,fill:{color:bg},line:{color:"E2EAF0",width:0.3}});
+      s7.addText(pa.label,{x:0.6,y:y+0.08,w:cols[0][2],h:0.26,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",valign:"middle",margin:0});
 
       if (hasComps7) {
         const abbr = s => s.replace("Needs Clusters","Needs Clstrs");
         s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:5.74,y:y+0.09,w:0.82,h:0.24,fill:{color:sc},line:{color:sc,width:0},rectRadius:0.04});
-        s7.addText(abbr(pa.status),{x:5.74,y:y+0.09,w:0.82,h:0.24,fontSize:6,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+        s7.addText(abbr(pa.status),{x:4.52,y:y+0.09,w:1.02,h:0.24,fontSize:6,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
         if (hasC1) {
           const c1=compStatus(pa.label,C1PAs);
-          s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:6.66,y:y+0.09,w:0.82,h:0.24,fill:{color:c1.color},line:{color:c1.color,width:0},rectRadius:0.04});
-          s7.addText(c1.text==="—"?"—":abbr(c1.text),{x:6.66,y:y+0.09,w:0.82,h:0.24,fontSize:6,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+          s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:5.38,y:y+0.09,w:1.02,h:0.24,fill:{color:c1.color},line:{color:c1.color,width:0},rectRadius:0.04});
+          s7.addText(c1.text==="—"?"—":abbr(c1.text),{x:5.38,y:y+0.09,w:1.02,h:0.24,fontSize:6,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
         }
         if (hasC2) {
           const c2=compStatus(pa.label,C2PAs);
-          s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:7.58,y:y+0.09,w:0.82,h:0.24,fill:{color:c2.color},line:{color:c2.color,width:0},rectRadius:0.04});
-          s7.addText(c2.text==="—"?"—":abbr(c2.text),{x:7.58,y:y+0.09,w:0.82,h:0.24,fontSize:6,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+          s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:6.56,y:y+0.09,w:1.02,h:0.24,fill:{color:c2.color},line:{color:c2.color,width:0},rectRadius:0.04});
+          s7.addText(c2.text==="—"?"—":abbr(c2.text),{x:6.56,y:y+0.09,w:1.02,h:0.24,fontSize:6,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
         }
-        s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:8.5,y:y+0.09,w:1.04,h:0.24,fill:{color:sc},line:{color:sc,width:0},rectRadius:0.04});
-        s7.addText(abbr(pa.status),{x:8.5,y:y+0.09,w:1.04,h:0.24,fontSize:6,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+        s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:7.7,y:y+0.09,w:1.76,h:0.24,fill:{color:sc},line:{color:sc,width:0},rectRadius:0.04});
+        s7.addText(abbr(pa.status),{x:7.7,y:y+0.09,w:1.76,h:0.24,fontSize:6,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
       } else {
-        s7.addText(pa.hubCount>0?"✓":"✗",{x:6.32,y:y+0.08,w:0.5,h:0.26,fontSize:12,bold:true,color:pa.hubCount>0?C.emerald:C.red,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
-        s7.addText(String(pa.subHubCount),{x:6.86,y:y+0.08,w:0.7,h:0.26,fontSize:11,bold:true,color:pa.subHubCount>=3?C.emerald:pa.subHubCount>=1?"F5A623":C.red,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
-        s7.addText(String(pa.spokeCount),{x:7.6,y:y+0.08,w:0.6,h:0.26,fontSize:11,bold:true,color:pa.spokeCount>=5?C.emerald:pa.spokeCount>=2?"F5A623":C.red,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
-        s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:8.24,y:y+0.09,w:1.3,h:0.24,fill:{color:sc},line:{color:sc,width:0},rectRadius:0.04});
-        s7.addText(pa.status,{x:8.24,y:y+0.09,w:1.3,h:0.24,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+        s7.addText(pa.hubCount>0?"✓":"✗",{x:5.72,y:y+0.08,w:0.6,h:0.26,fontSize:12,bold:true,color:pa.hubCount>0?C.emerald:C.red,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+        s7.addText(String(pa.subHubCount),{x:6.4,y:y+0.08,w:0.9,h:0.26,fontSize:11,bold:true,color:pa.subHubCount>=3?C.emerald:pa.subHubCount>=1?"F5A623":C.red,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+        s7.addText(String(pa.spokeCount),{x:7.36,y:y+0.08,w:0.8,h:0.26,fontSize:11,bold:true,color:pa.spokeCount>=5?C.emerald:pa.spokeCount>=2?"F5A623":C.red,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+        s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:8.22,y:y+0.09,w:1.5,h:0.24,fill:{color:sc},line:{color:sc,width:0},rectRadius:0.04});
+        s7.addText(pa.status,{x:8.22,y:y+0.09,w:1.5,h:0.24,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
       }
     });
 
   } else {
-    s7.addText("Upload Screaming Frog Internal HTML export (Internal tab → Export) to see practice area pyramid.",{x:3.6,y:2.8,w:5.9,h:0.6,fontSize:11,color:C.midGray,fontFace:"Calibri",italic:true,align:"center"});
+    s7.addText("Upload Screaming Frog Internal HTML export (Internal tab → Export) to see practice area pyramid.",{x:0.5,y:2.8,w:9.0,h:0.6,fontSize:11,color:C.midGray,fontFace:"Calibri",italic:true,align:"center"});
   }
 
 
@@ -1032,28 +1010,6 @@ async function buildPptx(data, narrative) {
     s8.addText(`Impact: ${a.impact||""}   Effort: ${a.effort||""}`,{x:x+0.6,y:y+0.74,w:3.9,h:0.18,fontSize:8,bold:true,color:C.midGray,fontFace:"Calibri",margin:0});
   });
   footer(s8,D);
-
-  // S9 SEQUENCE — priority cards, no timelines
-  const s9=pres.addSlide(); s9.background={color:C.darkBlue};
-  s9.addShape(pres.shapes.RECTANGLE,{x:0,y:0,w:0.22,h:5.625,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
-  s9.addShape(pres.shapes.RECTANGLE,{x:0,y:5.1,w:10,h:0.525,fill:{color:"0C1E3A"},line:{color:"0C1E3A",width:0}});
-  s9.addShape(pres.shapes.OVAL,{x:0.5,y:0.55,w:0.5,h:0.5,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
-  s9.addText("▶",{x:0.5,y:0.6,w:0.5,h:0.4,fontSize:16,color:C.darkBlue,fontFace:"Calibri",align:"center"});
-  s9.addText("Recommended Next Steps",{x:0.5,y:1.15,w:9,h:0.55,fontSize:34,bold:true,color:C.white,fontFace:"Calibri"});
-  s9.addText("Ordered by impact. Quick wins first, sustainable growth last.",{x:0.5,y:1.76,w:9,h:0.3,fontSize:12,color:"7ABCD4",fontFace:"Calibri",italic:true});
-  const seq=narrative.sequence||[];
-  const seqColors=[C.lightBlue,C.lightBlue,C.emerald,C.banana];
-  const seqIcons=["1","2","3","4"];
-  seq.forEach((t,i)=>{
-    const col=i%2, row=Math.floor(i/2);
-    const x=0.4+col*4.85, y=2.2+row*1.35;
-    s9.addShape(pres.shapes.RECTANGLE,{x,y,w:4.65,h:1.18,fill:{color:"0F2040"},shadow:{type:"outer",blur:8,offset:2,angle:135,color:"000000",opacity:0.2},line:{color:"1A3A60",width:0.5}});
-    s9.addShape(pres.shapes.RECTANGLE,{x,y,w:0.55,h:1.18,fill:{color:seqColors[i]||C.lightBlue},line:{color:seqColors[i]||C.lightBlue,width:0}});
-    s9.addText(seqIcons[i],{x,y,w:0.55,h:1.18,fontSize:22,bold:true,color:C.darkBlue,fontFace:"Calibri",align:"center",valign:"middle"});
-    s9.addText(t.action||t.week||"",{x:x+0.65,y:y+0.1,w:3.85,h:0.32,fontSize:12,bold:true,color:C.white,fontFace:"Calibri",margin:0});
-    s9.addText(t.why||t.body||"",  {x:x+0.65,y:y+0.46,w:3.85,h:0.58,fontSize:10,color:"A8C4D8",fontFace:"Calibri",margin:0});
-  });
-  s9.addText(`${D.preparedBy}   ·   ${D.domain}   ·   ${D.date||""}`,{x:0.5,y:5.15,w:9,h:0.25,fontSize:8,color:"3A6080",fontFace:"Calibri"});
 
   return await pres.write({outputType:"nodebuffer"});
 }
