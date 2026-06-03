@@ -368,8 +368,7 @@ async function generate() {
   }
 
   const data = {};
-  ['clientName','domain','preparedBy','date','semrushProjectId','brightlocalLocationId',
-   'brokenExternal','citationsFound','napConsistency','localRankAvg'].forEach(id => {
+  ['clientName','domain','preparedBy','date','semrushProjectId','brightlocalLocationId'].forEach(id => {
     const el = document.getElementById(id);
     if (el?.value?.trim()) {
       const v = el.value.trim();
