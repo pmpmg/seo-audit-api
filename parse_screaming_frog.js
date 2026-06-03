@@ -77,7 +77,7 @@ function parseScreamingFrogCsv(buffer) {
       'lawyer','attorney','law','firm','pc','llc','lp','legal','rights','case','cases',
       'claim','claims','help','need','find','get','free','best','top','local','near',
       'me','vs','it','this','that','its','was','has','had','have','been','being',
-      'accident','injury','personal','general','common','different','types','type',
+      'accident','accidents','injury','injuries','personal','general','common','different','types','type','involving','following','after','result','results','role','victim','victims',
       'page','pages','site','web','blog','post','category','tag','archive','date',
       'after','before','about','from','will','should','would','could','may','might',
       '2020','2021','2022','2023','2024','2025','2026','jan','feb','mar','apr','may',
