@@ -94,11 +94,6 @@
         <span class="field-source"></span>
       </div>
       <div class="field-row">
-        <span class="field-label">City / Location</span>
-        <input type="text" id="location" placeholder="e.g. Grand Junction, CO">
-        <span class="field-source">Helps BrightLocal local search</span>
-      </div>
-      <div class="field-row">
         <span class="field-label">Audit Date</span>
         <input type="text" id="date" placeholder="e.g. June 2026">
         <span class="field-source"></span>
@@ -131,51 +126,16 @@
   <div class="card">
     <div class="card-header blue">SEMRUSH SITE AUDIT <span class="auto-badge">AUTO-FETCHED</span></div>
     <div class="card-body">
-      <p style="font-size:14px;color:#009ABF;padding:0 0 8px 0;">All fields below auto-populate from your SEMrush campaign. Override any field if needed.</p>
-      <div class="field-row">
-        <span class="field-label">Pages Crawled</span>
-        <input type="number" id="pagesCrawled" placeholder="Total pages in audit">
-        <span class="field-source">SEMrush → Site Audit</span>
-      </div>
-      <div class="field-row">
-        <span class="field-label">Site Health Score</span>
-        <input type="number" id="siteHealth" placeholder="Out of 100" min="0" max="100">
-        <span class="field-source">SEMrush → Site Audit</span>
-      </div>
-      <div class="field-row">
-        <span class="field-label">Schema Errors</span>
-        <input type="number" id="schemaErrors" placeholder="Total schema errors">
-        <span class="field-source">SEMrush → Errors</span>
-      </div>
-      <div class="field-row">
-        <span class="field-label">Missing Meta Desc</span>
-        <input type="number" id="missingDesc" placeholder="Pages with no meta description">
-        <span class="field-source">SEMrush → Warnings</span>
-      </div>
-      <div class="field-row">
-        <span class="field-label">Titles Too Long</span>
-        <input type="number" id="titlesTooLong" placeholder="Titles over character limit">
-        <span class="field-source">SEMrush → Warnings</span>
-      </div>
-      <div class="field-row">
-        <span class="field-label">Missing ALT Text</span>
-        <input type="number" id="missingAlt" placeholder="Images missing ALT">
-        <span class="field-source">SEMrush → Errors</span>
-      </div>
-      <div class="field-row">
-        <span class="field-label">Thin Pages</span>
-        <input type="number" id="thinPages" placeholder="Low text-to-HTML ratio">
-        <span class="field-source">SEMrush → Warnings</span>
-      </div>
-      <div class="field-row">
-        <span class="field-label">Links No Anchor</span>
-        <input type="number" id="noAnchors" placeholder="Links with no anchor text">
-        <span class="field-source">SEMrush → Warnings</span>
-      </div>
-      <div class="field-row">
-        <span class="field-label">Broken External Links</span>
-        <input type="number" id="brokenExternal" placeholder="External links with errors">
-        <span class="field-source">SEMrush → Warnings</span>
+      <p style="font-size:14px;color:#009ABF;padding:4px 0 6px;">All SEMrush data auto-populates from your SEMrush Project ID above — no manual entry needed.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;padding:4px 0 4px;">
+        <span class="auto-item">✓ Pages crawled</span>
+        <span class="auto-item">✓ Site health score</span>
+        <span class="auto-item">✓ Schema errors</span>
+        <span class="auto-item">✓ Missing meta descriptions</span>
+        <span class="auto-item">✓ Titles too long</span>
+        <span class="auto-item">✓ Missing alt text</span>
+        <span class="auto-item">✓ Thin pages</span>
+        <span class="auto-item">✓ Broken links</span>
       </div>
     </div>
   </div>
@@ -184,22 +144,11 @@
   <div class="card">
     <div class="card-header green">BRIGHTLOCAL <span class="auto-badge">AUTO-FETCHED</span></div>
     <div class="card-body">
-      <p style="font-size:14px;color:#00684F;padding:8px 0;">Citation audit runs automatically using your saved BrightLocal report. Override below if needed.</p>
-      <p style="font-size:14px;color:#6B7A8D;padding:4px 0 10px;">In BrightLocal go to <strong>Citation Tracker</strong>, open the client's report, then look at the browser URL — it will show <strong>/location/<em>XXXXXXX</em>/ct/status?reportId=<em>XXXXXXX</em></strong> — the report ID is the number after <strong>reportId=</strong>.</p>
-      <div class="field-row">
-        <span class="field-label">Citations Found</span>
-        <input type="number" id="citationsFound" placeholder="Auto-populated">
-        <span class="field-source">Override if needed</span>
-      </div>
-      <div class="field-row">
-        <span class="field-label">NAP Consistency %</span>
-        <input type="number" id="napConsistency" placeholder="Auto-populated" min="0" max="100">
-        <span class="field-source">Override if needed</span>
-      </div>
-      <div class="field-row">
-        <span class="field-label">Local Rank Avg</span>
-        <input type="number" id="localRankAvg" placeholder="Average local position" step="0.1">
-        <span class="field-source">BrightLocal → Rank Tracker</span>
+      <p style="font-size:14px;color:#00684F;padding:4px 0 6px;">Citation data auto-populates from your BrightLocal Location ID above — no manual entry needed.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;padding:4px 0 4px;">
+        <span class="auto-item">✓ Key Citation Score</span>
+        <span class="auto-item">✓ Citations found vs. total</span>
+        <span class="auto-item">✓ NAP errors</span>
       </div>
     </div>
   </div>
@@ -419,8 +368,7 @@ async function generate() {
   }
 
   const data = {};
-  ['clientName','domain','preparedBy','location','date','semrushProjectId','brightlocalLocationId','pagesCrawled','siteHealth',
-   'schemaErrors','missingDesc','titlesTooLong','missingAlt','thinPages','noAnchors',
+  ['clientName','domain','preparedBy','date','semrushProjectId','brightlocalLocationId',
    'brokenExternal','citationsFound','napConsistency','localRankAvg'].forEach(id => {
     const el = document.getElementById(id);
     if (el?.value?.trim()) {
