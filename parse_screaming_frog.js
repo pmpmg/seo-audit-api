@@ -1,218 +1,267 @@
 // parse_screaming_frog.js
-// Parses a Screaming Frog Crawl Overview CSV export into structured data
-// Works with the "Crawl Overview" export format (File → Export → Crawl Overview)
+// Parses Screaming Frog Internal HTML export (Internal tab → Export)
+// Extracts per-URL data, aggregate stats, and auto-detected practice area pyramids
 
 "use strict";
 
 function parseScreamingFrogCsv(buffer) {
   try {
-    const text = buffer.toString("utf-8").replace(/^\uFEFF/, ""); // strip BOM
-    const rows = text.split(/\r?\n/).map(line =>
-      line.split(",").map(c => c.trim().replace(/^"|"$/g, ""))
-    ).filter(r => r.some(c => c));
+    const text = buffer.toString("utf-8").replace(/^\uFEFF/, "");
 
-    // Build section-aware lookup map
-    const sections = {};
-    let currentSection = "General";
-    for (const r of rows) {
-      // Section header = single non-empty cell that isn't purely numeric
-      if (r.filter(c => c).length === 1 && r[0] && !/^\d/.test(r[0]) && r[0] !== "Summary") {
-        currentSection = r[0];
-        if (!sections[currentSection]) sections[currentSection] = {};
-        continue;
-      }
-      if (r.length >= 2 && r[0] && r[1]) {
-        const num = parseInt(r[1].replace(/,/g, ""));
-        if (!isNaN(num)) {
-          if (!sections[currentSection]) sections[currentSection] = {};
-          sections[currentSection][r[0]] = num;
+    // Parse CSV properly handling quoted fields
+    function parseCSVLine(line) {
+      const result = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        if (line[i] === '"') {
+          inQuotes = !inQuotes;
+        } else if (line[i] === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += line[i];
         }
       }
+      result.push(current.trim());
+      return result;
     }
 
-    // Helper: get value from a section
-    const s = (section, key, def = 0) =>
-      (sections[section] || {})[key] ?? def;
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return { sf: null };
 
-    // ── Extract all useful metrics ────────────────────────────────
+    const headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
+    const rows = lines.slice(1).map(line => {
+      const vals = parseCSVLine(line).map(v => v.replace(/^"|"$/g, '').trim());
+      const row = {};
+      headers.forEach((h, i) => row[h] = vals[i] || '');
+      return row;
+    }).filter(r => r['Address'] && r['Address'].startsWith('http'));
 
-    // Site overview
-    const totalUrlsCrawled   = s("General", "Total URLs Crawled") || s("Internal", "All");
-    const htmlPages          = s("Internal", "HTML");
-    const indexablePages     = s("General", "Total Internal Indexable URLs");
-    const nonIndexablePages  = s("General", "Total Internal Non-Indexable URLs");
+    // Filter to indexable HTML pages only
+    const html = rows.filter(r =>
+      (r['Content Type'] || '').includes('text/html') &&
+      r['Status Code'] === '200' &&
+      r['Indexability'] === 'Indexable'
+    );
 
-    // Response codes
-    const errors4xx          = s("Response Codes", "Internal Client Error (4xx)");
-    const errors5xx          = s("Response Codes", "Internal Server Error (5xx)");
-    const redirects3xx       = s("Response Codes", "Internal Redirection (3xx)");
-
-    // Page titles
-    const titlesMissing      = s("Page Titles", "Missing");
-    const titlesOver60       = s("Page Titles", "Over 60 Characters");
-    const titlesBelow30      = s("Page Titles", "Below 30 Characters");
-    const titlesSameAsH1     = s("Page Titles", "Same as H1");
-    const titlesDuplicate    = s("Page Titles", "Duplicate");
-
-    // Meta descriptions
-    const metaMissing        = s("Meta Description", "Missing");
-    const metaDuplicate      = s("Meta Description", "Duplicate");
-    const metaOver155        = s("Meta Description", "Over 155 Characters");
-    const metaBelow70        = s("Meta Description", "Below 70 Characters");
-
-    // H1/H2
-    const h1Missing          = s("H1", "Missing");
-    const h1Duplicate        = s("H1", "Duplicate");
-    const h1Over70           = s("H1", "Over 70 Characters");
-    const h2Missing          = s("H2", "Missing");
-    const h2Duplicate        = s("H2", "Duplicate");
-
-    // Content quality
-    const lowContentPages    = s("Content", "Low Content Pages");
-    const readabilityHard    = s("Content", "Readability Difficult");
-    const readabilityVHard   = s("Content", "Readability Very Difficult");
-    const nearDuplicates     = s("Content", "Near Duplicates");
-    const exactDuplicates    = s("Content", "Exact Duplicates");
-
-    // Images
-    const missingAltText     = s("Images", "Missing Alt Text");
-    const imagesOver100kb    = s("Images", "Over 100 KB");
-
-    // Canonicals
-    const missingCanonical   = s("Canonicals", "Missing");
-
-    // Links
-    const noAnchorText       = s("Links", "Internal Outlinks With No Anchor Text");
-    const highCrawlDepth     = s("Links", "Pages With High Crawl Depth");
-
-    // Security
-    const httpUrls           = s("Security", "HTTP URLs");
-    const mixedContent       = s("Security", "Mixed Content");
-
-    // Structured data
-    const structuredDataMissing = s("Structured Data", "Missing");
-    const structuredDataErrors  = s("Structured Data", "Validation Errors");
+    // ── AGGREGATE STATS ──────────────────────────────────────────
+    const totalUrlsCrawled  = rows.length;
+    const htmlPages         = html.length;
+    const titlesOver60      = html.filter(r => parseInt(r['Title 1 Length']||0) > 60).length;
+    const titlesBelow30     = html.filter(r => { const l=parseInt(r['Title 1 Length']||0); return l>0&&l<30; }).length;
+    const titlesMissing     = html.filter(r => parseInt(r['Title 1 Length']||0) === 0).length;
+    const metaOver155       = html.filter(r => parseInt(r['Meta Description 1 Length']||0) > 155).length;
+    const metaMissing       = html.filter(r => parseInt(r['Meta Description 1 Length']||0) === 0).length;
+    const h1Missing         = html.filter(r => !r['H1-1'] || r['H1-1'].trim() === '').length;
+    const lowContentPages   = html.filter(r => parseInt(r['Word Count']||0) < 300).length;
+    const readabilityHard   = html.filter(r => ['Hard','Very Hard'].includes(r['Readability'])).length;
+    const errors4xx         = rows.filter(r => (r['Status Code']||'').startsWith('4')).length;
+    const redirects3xx      = rows.filter(r => (r['Status Code']||'').startsWith('3')).length;
 
     // Depth distribution
-    const depth = sections["Depth (Clicks from Start URL)"] || {};
-    const depthDist = {
-      d0: depth["0"] || 0,
-      d1: depth["1"] || 0,
-      d2: depth["2"] || 0,
-      d3: depth["3"] || 0,
-      d4plus: (depth["4"] || 0) + (depth["5"] || 0) +
-               (depth["6"] || 0) + (depth["7"] || 0) +
-               (depth["8"] || 0) + (depth["9"] || 0) +
-               (depth["10+"] || 0),
-    };
+    const depthDist = { d0:0, d1:0, d2:0, d3:0, d4plus:0 };
+    html.forEach(r => {
+      const d = parseInt(r['Crawl Depth']||0);
+      if (d===0) depthDist.d0++;
+      else if (d===1) depthDist.d1++;
+      else if (d===2) depthDist.d2++;
+      else if (d===3) depthDist.d3++;
+      else depthDist.d4plus++;
+    });
 
-    // Top inlinked pages (hub detection)
-    const inlinkPages = [];
-    let inInlinks = false;
-    for (const r of rows) {
-      if (r[0] && r[0].includes("Inlinks (Top")) { inInlinks = true; continue; }
-      if (inInlinks && r[0] && r[0].startsWith("http")) {
-        inlinkPages.push(r[0]);
-      } else if (inInlinks && !r[0]) {
-        inInlinks = false;
-      }
+    // ── AUTO-DETECT PRACTICE AREA CLUSTERS ───────────────────────
+    const STOP = new Set([
+      'the','a','an','in','of','for','to','and','or','with','by','at','on','is','are',
+      'how','can','what','why','when','your','our','you','we','i','my','do','does','did',
+      'lawyer','attorney','law','firm','pc','llc','lp','legal','rights','case','cases',
+      'claim','claims','help','need','find','get','free','best','top','local','near',
+      'me','vs','it','this','that','its','was','has','had','have','been','being',
+      'accident','injury','personal','general','common','different','types','type',
+      'page','pages','site','web','blog','post','category','tag','archive','date',
+      'after','before','about','from','will','should','would','could','may','might',
+      '2020','2021','2022','2023','2024','2025','2026','jan','feb','mar','apr','may',
+      'jun','jul','aug','sep','oct','nov','dec','january','february','march','april',
+      'june','july','august','september','october','november','december',
+    ]);
+
+    // Words that indicate geographic pages (not practice areas)
+    const GEO_WORDS = new Set([
+      'grand','montrose','delta','mesa','county','junction','colorado','denver','boulder',
+      'pueblo','aurora','fort','collins','springs','greeley','thornton','arvada',
+      'westminster','lakewood','highlands','ranch','lone','tree','castle','rock',
+    ]);
+
+    // Words that indicate firm/utility pages
+    const UTILITY = new Set([
+      'contact','about','team','staff','results','testimonials','sitemap','disclaimer',
+      'privacy','terms','killian','davis','richter','cares','luke','smith','gabriel',
+      'maldonado','christopher','damon','keith','jerome',
+    ]);
+
+    function slugWords(url) {
+      const path = url.replace(/https?:\/\/[^/]+/, '').replace(/\.(html|php|aspx)$/, '');
+      return path.split(/[-/]/)
+        .map(w => w.toLowerCase().trim())
+        .filter(w => w.length > 2 && !STOP.has(w) && !GEO_WORDS.has(w) && !UTILITY.has(w) && !/^\d+$/.test(w));
     }
 
-    // ── Content architecture signals ─────────────────────────────
-    // Infer hub/sub-hub/spoke from depth distribution
-    // depth 1 = likely hub pages, depth 2-3 = sub-hub/spoke, 4+ = deep spoke/blog
-    const hubPages      = depthDist.d1;
-    const subHubPages   = depthDist.d2;
-    const spokePages    = depthDist.d3;
-    const deepPages     = depthDist.d4plus;
-    const blogPages     = inlinkPages.filter(u => u.includes("/blog")).length > 0
-      ? depthDist.d3 + depthDist.d4plus  // rough estimate if blog exists
-      : 0;
+    // Synonyms/merges — combine related terms into one cluster name
+    const MERGE = {
+      'compensation': 'workers',
+      'comp':         'workers',
+      'wrongful':     'wrongful-death',
+      'death':        'wrongful-death',
+      'motorist':     'uninsured',
+      'underinsured': 'uninsured',
+      'premises':     'slip-fall',
+      'slip':         'slip-fall',
+      'fall':         'slip-fall',
+      'product':      'product-liability',
+      'liability':    'product-liability',
+      'brain':        'brain-injury',
+      'spinal':       'spinal-injury',
+      'spine':        'spinal-injury',
+      'construction': 'construction-accident',
+      'oilfield':     'oilfield-accident',
+      'oil':          'oilfield-accident',
+      'dog':          'dog-bite',
+      'bite':         'dog-bite',
+      'truck':        'truck-accident',
+      'car':          'car-accident',
+      'motorcycle':   'motorcycle-accident',
+      'bicycle':      'bicycle-accident',
+      'bike':         'bicycle-accident',
+      'pedestrian':   'pedestrian-accident',
+      'bus':          'bus-accident',
+      'rollover':     'rollover-accident',
+      'distracted':   'distracted-driving',
+      'fatigued':     'truck-accident',
+      'jackknife':    'truck-accident',
+      'workers':      'workers-comp',
+      'compensation': 'workers-comp',
+      'comp':         'workers-comp',
+      'radiation':    'radiation-exposure',
+      'nursing':      'nursing-home',
+    };
 
-    // Content health score (0-100) for use in slides
-    const totalHtml = htmlPages || 1;
-    const issueRatio = (
-      titlesMissing + metaMissing + h1Missing +
-      lowContentPages + errors4xx + missingAltText
-    ) / totalHtml;
-    const contentHealthScore = Math.max(0, Math.min(100,
-      Math.round(100 - (issueRatio * 100) - (metaDuplicate / totalHtml * 30) - (metaOver155 / totalHtml * 20))
-    ));
+    // Build word → URLs map
+    const wordToUrls = {};
+    html.forEach(r => {
+      const words = slugWords(r['Address']);
+      words.forEach(w => {
+        const key = MERGE[w] || w;
+        if (!wordToUrls[key]) wordToUrls[key] = new Set();
+        wordToUrls[key].add(r['Address']);
+      });
+    });
 
-    // ── Return flat data object ───────────────────────────────────
+    // Only keep clusters with 2+ pages, not geo/utility noise
+    const clusterCandidates = Object.entries(wordToUrls)
+      .filter(([w, urls]) => urls.size >= 2)
+      .sort((a, b) => b[1].size - a[1].size);
+
+    // Build practice area clusters
+    const practiceAreas = [];
+    const assignedUrls = new Set();
+
+    for (const [clusterKey, urlSet] of clusterCandidates) {
+      const clusterUrls = [...urlSet];
+
+      // Get full row data for each URL
+      const pages = clusterUrls.map(url => {
+        const r = html.find(h => h['Address'] === url);
+        if (!r) return null;
+        return {
+          url,
+          depth:     parseInt(r['Crawl Depth'] || 99),
+          inlinks:   parseInt(r['Inlinks'] || 0),
+          wordCount: parseInt(r['Word Count'] || 0),
+          h1:        r['H1-1'] || '',
+          title:     r['Title 1'] || '',
+        };
+      }).filter(Boolean);
+
+      if (!pages.length) continue;
+
+      // Identify hub: depth 1 page with highest inlinks
+      const depth1 = pages.filter(p => p.depth === 1).sort((a,b) => b.inlinks - a.inlinks);
+      // Identify sub-hubs: depth 2, 5+ inlinks
+      const subHubs = pages.filter(p => p.depth === 2 && p.inlinks >= 5);
+      // Spokes: everything else (depth 2 low inlinks, depth 3)
+      const spokes  = pages.filter(p => !depth1.includes(p) && !subHubs.includes(p));
+
+      // Score pyramid health
+      let status, statusColor;
+      if (depth1.length > 0 && subHubs.length >= 3 && spokes.length >= 5) {
+        status = "Strong";      statusColor = "00684F";
+      } else if (depth1.length > 0 && (subHubs.length >= 1 || spokes.length >= 3)) {
+        status = "Needs Clusters"; statusColor = "F5A623";
+      } else if (depth1.length > 0) {
+        status = "Thin";        statusColor = "C0392B";
+      } else {
+        status = "No Hub";      statusColor = "C0392B";
+      }
+
+      // Format cluster name nicely
+      const label = clusterKey
+        .split('-')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+
+      practiceAreas.push({
+        label,
+        hubCount:    depth1.length,
+        subHubCount: subHubs.length,
+        spokeCount:  spokes.length,
+        totalPages:  pages.length,
+        status,
+        statusColor,
+        hubPage:     depth1[0]?.url || null,
+      });
+
+      clusterUrls.forEach(u => assignedUrls.add(u));
+    }
+
+    // Sort by total pages descending, cap at 8
+    const topPracticeAreas = practiceAreas
+      .sort((a, b) => b.totalPages - a.totalPages)
+      .slice(0, 8);
+
+    // Top inlinked pages (hub candidates)
+    const topInlinkedPages = [...html]
+      .sort((a, b) => parseInt(b['Inlinks']||0) - parseInt(a['Inlinks']||0))
+      .slice(0, 10)
+      .map(r => r['Address']);
+
     return {
-      // Existing fields the rest of the app already uses
-      sfPagesCrawled:   totalUrlsCrawled,
-      sfMissingDesc:    metaMissing,
-      sfTitleTooLong:   titlesOver60,
-      sfMissingH1:      h1Missing,
+      // Legacy fields for backward compat
+      sfPagesCrawled:  totalUrlsCrawled,
+      sfMissingDesc:   metaMissing,
+      sfTitleTooLong:  titlesOver60,
+      sfMissingH1:     h1Missing,
 
-      // New rich crawl data
+      // Rich data object
       sf: {
-        // Overview
         totalUrlsCrawled,
         htmlPages,
-        indexablePages,
-        nonIndexablePages,
-
-        // Response codes
-        errors4xx,
-        errors5xx,
-        redirects3xx,
-
-        // Titles
-        titlesMissing,
         titlesOver60,
         titlesBelow30,
-        titlesSameAsH1,
-        titlesDuplicate,
-
-        // Meta
-        metaMissing,
-        metaDuplicate,
+        titlesMissing,
         metaOver155,
-        metaBelow70,
-
-        // Headings
+        metaMissing,
         h1Missing,
-        h1Duplicate,
-        h1Over70,
-        h2Missing,
-        h2Duplicate,
-
-        // Content
         lowContentPages,
         readabilityHard,
-        readabilityVHard,
-        nearDuplicates,
-        exactDuplicates,
-
-        // Images
-        missingAltText,
-        imagesOver100kb,
-
-        // Technical
-        missingCanonical,
-        noAnchorText,
-        highCrawlDepth,
-        httpUrls,
-        mixedContent,
-        structuredDataMissing,
-        structuredDataErrors,
-
-        // Architecture
+        errors4xx,
+        redirects3xx,
         depthDist,
-        hubPages,
-        subHubPages,
-        spokePages,
-        deepPages,
-        topInlinkedPages: inlinkPages.slice(0, 10),
-
-        // Scores
-        contentHealthScore,
+        topInlinkedPages,
+        practiceAreas: topPracticeAreas,
       }
     };
-  } catch (e) {
+
+  } catch(e) {
     console.error("parseScreamingFrogCsv error:", e.message);
     return { sf: null };
   }
