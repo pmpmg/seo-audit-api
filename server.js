@@ -905,20 +905,20 @@ async function buildPptx(data, narrative) {
   stit(s7, s7Title);
 
   // ── LEFT PANEL: Site architecture + keyword rankings ──────────
-  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:1.72,w:2.9,h:3.48,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:1.52,w:2.9,h:3.5,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
 
   // Keyword ranking chips
-  s7.addText("KEYWORD RANKINGS",{x:0.5,y:1.82,w:2.7,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
+  s7.addText("KEYWORD RANKINGS",{x:0.5,y:1.62,w:2.7,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
   [{label:"Top 3",val:OA.top3||0,color:C.emerald},{label:"Top 10",val:OA.top10||0,color:C.lightBlue},{label:"Top 20",val:OA.top20||0,color:C.midGray}]
   .forEach((r,i)=>{
     const x=0.5+i*0.92;
-    s7.addShape(pres.shapes.RECTANGLE,{x,y:2.06,w:0.82,h:0.64,fill:{color:C.white},line:{color:"E2EAF0",width:0.3}});
-    s7.addText(String(r.val),{x,y:2.1,w:0.82,h:0.36,fontSize:18,bold:true,color:r.color,fontFace:"Calibri",align:"center",margin:0});
-    s7.addText(r.label,{x,y:2.46,w:0.82,h:0.2,fontSize:8,color:C.midGray,fontFace:"Calibri",align:"center",margin:0});
+    s7.addShape(pres.shapes.RECTANGLE,{x,y:1.86,w:0.82,h:0.64,fill:{color:C.white},line:{color:"E2EAF0",width:0.3}});
+    s7.addText(String(r.val),{x,y:1.9,w:0.82,h:0.36,fontSize:18,bold:true,color:r.color,fontFace:"Calibri",align:"center",margin:0});
+    s7.addText(r.label,{x,y:2.26,w:0.82,h:0.2,fontSize:8,color:C.midGray,fontFace:"Calibri",align:"center",margin:0});
   });
 
   // Page architecture from Screaming Frog
-  s7.addText("PAGE ARCHITECTURE",{x:0.5,y:2.82,w:2.7,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
+  s7.addText("PAGE ARCHITECTURE",{x:0.5,y:2.62,w:2.7,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
   const dd = SF.depthDist || {};
   const totalHtml7 = SF.htmlPages || 1;
   [
@@ -927,7 +927,7 @@ async function buildPptx(data, narrative) {
     {label:"Spoke pages (depth 3)", val:dd.d3||0,     note:"Supporting & geo-targeted content"},
     {label:"Deep / blog (4+)",      val:dd.d4plus||0, note:"Long-tail, Q&A, blog posts"},
   ].forEach((r,i)=>{
-    const y=3.06+i*0.52;
+    const y=2.86+i*0.52;
     const barW = Math.max(0.04, Math.min(1.9, 1.9*(r.val/totalHtml7)));
     const pct  = Math.round((r.val/totalHtml7)*100);
     s7.addShape(pres.shapes.RECTANGLE,{x:0.5,y,w:2.7,h:0.44,fill:{color:C.white},line:{color:"E2EAF0",width:0.3}});
@@ -939,46 +939,71 @@ async function buildPptx(data, narrative) {
   });
 
   // ── RIGHT PANEL: Competitor content gap ───────────────────────
-  s7.addShape(pres.shapes.RECTANGLE,{x:3.5,y:1.72,w:6.1,h:3.48,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+  s7.addShape(pres.shapes.RECTANGLE,{x:3.5,y:1.52,w:6.1,h:3.5,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
 
-  // Practice area pyramid table
-  const PAs = SF.practiceAreas || [];
-  s7.addText("PRACTICE AREA CONTENT PYRAMID",{x:3.6,y:1.82,w:6.0,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
+  // Practice area pyramid table — with optional competitor comparison
+  const PAs    = SF.practiceAreas || [];
+  const C1PAs  = (D.sfComp1?.practiceAreas || []);
+  const C2PAs  = (D.sfComp2?.practiceAreas || []);
+  const hasC1  = C1PAs.length > 0;
+  const hasC2  = C2PAs.length > 0;
+  const hasComps7 = hasC1 || hasC2;
+
+  s7.addText("PRACTICE AREA CONTENT PYRAMID",{x:3.6,y:1.62,w:6.0,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
 
   if (PAs.length > 0) {
-    // Column headers
-    s7.addShape(pres.shapes.RECTANGLE,{x:3.6,y:2.06,w:6.0,h:0.28,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
-    [["PRACTICE AREA",3.68,2.55],["HUB",6.32,0.5],["SUB-HUBS",6.86,0.7],["SPOKES",7.6,0.6],["STATUS",8.24,1.36]].forEach(([lbl,x,w])=>{
-      s7.addText(lbl,{x,y:2.08,w,h:0.24,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",valign:"middle",margin:0});
+    function compStatus(label, compPAs) {
+      const match = compPAs.find(p => p.label.toLowerCase() === label.toLowerCase());
+      if (!match) return { text:"—", color:C.midGray };
+      const colors = { "Strong":C.emerald, "Needs Clusters":"F5A623", "Thin":C.red, "No Hub":C.red };
+      return { text: match.status, color: colors[match.status] || C.midGray };
+    }
+
+    const cols = hasComps7
+      ? [["PRACTICE AREA",3.68,2.0],["YOURS",5.74,0.88],["COMP 1",6.66,0.88],["COMP 2",7.58,0.88],["STATUS",8.5,1.1]]
+      : [["PRACTICE AREA",3.68,2.55],["HUB",6.32,0.5],["SUB-HUBS",6.86,0.7],["SPOKES",7.6,0.6],["STATUS",8.24,1.36]];
+
+    s7.addShape(pres.shapes.RECTANGLE,{x:3.6,y:1.86,w:6.0,h:0.28,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
+    cols.forEach(([lbl,x,w])=>{
+      s7.addText(lbl,{x,y:1.88,w,h:0.24,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",valign:"middle",margin:0});
     });
 
-    // Practice area rows
     PAs.slice(0,6).forEach((pa,i)=>{
-      const y=2.38+i*0.44;
+      const y=2.18+i*0.44;
       const bg=i%2===0?C.white:C.offWhite;
-      const sc = pa.statusColor || C.midGray;
+      const sc=pa.statusColor||C.midGray;
       s7.addShape(pres.shapes.RECTANGLE,{x:3.6,y,w:6.0,h:0.41,fill:{color:bg},line:{color:"E2EAF0",width:0.3}});
-      s7.addText(pa.label,{x:3.68,y:y+0.08,w:2.55,h:0.26,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",valign:"middle",margin:0});
-      const hubIcon = pa.hubCount>0?"✓":"✗";
-      const hubColor = pa.hubCount>0?C.emerald:C.red;
-      s7.addText(hubIcon,{x:6.32,y:y+0.08,w:0.5,h:0.26,fontSize:12,bold:true,color:hubColor,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
-      const subColor = pa.subHubCount>=3?C.emerald:pa.subHubCount>=1?"F5A623":C.red;
-      s7.addText(String(pa.subHubCount),{x:6.86,y:y+0.08,w:0.7,h:0.26,fontSize:11,bold:true,color:subColor,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
-      const spokeColor = pa.spokeCount>=5?C.emerald:pa.spokeCount>=2?"F5A623":C.red;
-      s7.addText(String(pa.spokeCount),{x:7.6,y:y+0.08,w:0.6,h:0.26,fontSize:11,bold:true,color:spokeColor,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
-      s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:8.26,y:y+0.09,w:1.28,h:0.24,fill:{color:sc},line:{color:sc,width:0},rectRadius:0.04});
-      s7.addText(pa.status,{x:8.26,y:y+0.09,w:1.28,h:0.24,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
-    });
+      s7.addText(pa.label,{x:3.68,y:y+0.08,w:cols[0][2],h:0.26,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",valign:"middle",margin:0});
 
-    // Legend
-    [[C.emerald,"Hub = main service page",3.6],["F5A623","Sub-hubs = topic clusters",5.5],[C.lightBlue,"Spokes = supporting pages",7.4]].forEach(([col,lbl,x])=>{
-      s7.addShape(pres.shapes.RECTANGLE,{x,y:5.48,w:0.12,h:0.12,fill:{color:col},line:{color:col,width:0}});
-      s7.addText(lbl,{x:x+0.16,y:5.46,w:1.7,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri",margin:0});
+      if (hasComps7) {
+        const abbr = s => s.replace("Needs Clusters","Needs Clstrs");
+        s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:5.74,y:y+0.09,w:0.82,h:0.24,fill:{color:sc},line:{color:sc,width:0},rectRadius:0.04});
+        s7.addText(abbr(pa.status),{x:5.74,y:y+0.09,w:0.82,h:0.24,fontSize:6,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+        if (hasC1) {
+          const c1=compStatus(pa.label,C1PAs);
+          s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:6.66,y:y+0.09,w:0.82,h:0.24,fill:{color:c1.color},line:{color:c1.color,width:0},rectRadius:0.04});
+          s7.addText(c1.text==="—"?"—":abbr(c1.text),{x:6.66,y:y+0.09,w:0.82,h:0.24,fontSize:6,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+        }
+        if (hasC2) {
+          const c2=compStatus(pa.label,C2PAs);
+          s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:7.58,y:y+0.09,w:0.82,h:0.24,fill:{color:c2.color},line:{color:c2.color,width:0},rectRadius:0.04});
+          s7.addText(c2.text==="—"?"—":abbr(c2.text),{x:7.58,y:y+0.09,w:0.82,h:0.24,fontSize:6,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+        }
+        s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:8.5,y:y+0.09,w:1.04,h:0.24,fill:{color:sc},line:{color:sc,width:0},rectRadius:0.04});
+        s7.addText(abbr(pa.status),{x:8.5,y:y+0.09,w:1.04,h:0.24,fontSize:6,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+      } else {
+        s7.addText(pa.hubCount>0?"✓":"✗",{x:6.32,y:y+0.08,w:0.5,h:0.26,fontSize:12,bold:true,color:pa.hubCount>0?C.emerald:C.red,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+        s7.addText(String(pa.subHubCount),{x:6.86,y:y+0.08,w:0.7,h:0.26,fontSize:11,bold:true,color:pa.subHubCount>=3?C.emerald:pa.subHubCount>=1?"F5A623":C.red,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+        s7.addText(String(pa.spokeCount),{x:7.6,y:y+0.08,w:0.6,h:0.26,fontSize:11,bold:true,color:pa.spokeCount>=5?C.emerald:pa.spokeCount>=2?"F5A623":C.red,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+        s7.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:8.24,y:y+0.09,w:1.3,h:0.24,fill:{color:sc},line:{color:sc,width:0},rectRadius:0.04});
+        s7.addText(pa.status,{x:8.24,y:y+0.09,w:1.3,h:0.24,fontSize:7,bold:true,color:C.white,fontFace:"Calibri",align:"center",valign:"middle",margin:0});
+      }
     });
 
   } else {
-    s7.addText("Upload Screaming Frog Internal HTML export\n(Internal tab → Export) to see practice area pyramid analysis.",{x:3.6,y:2.8,w:5.9,h:0.8,fontSize:11,color:C.midGray,fontFace:"Calibri",italic:true,align:"center"});
+    s7.addText("Upload Screaming Frog Internal HTML export (Internal tab → Export) to see practice area pyramid.",{x:3.6,y:2.8,w:5.9,h:0.6,fontSize:11,color:C.midGray,fontFace:"Calibri",italic:true,align:"center"});
   }
+
 
 
   // Insight bar
@@ -988,8 +1013,8 @@ async function buildPptx(data, narrative) {
     : weakAreas.length > 0
     ? `⚠️  ${weakAreas.length} practice area${weakAreas.length!==1?"s":""} lack topical depth: ${weakAreas.slice(0,3).join(", ")}${weakAreas.length>3?" and more":""} — competitors with full hub/spoke clusters will outrank individual pages.`
     : `✅  ${SF.htmlPages||0} pages crawled — practice area content structure looks solid.`;
-  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:5.18,w:9.2,h:0.34,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
-  s7.addText(s7Insight,{x:0.55,y:5.19,w:8.9,h:0.32,fontSize:9,color:C.white,fontFace:"Calibri",valign:"middle"});
+  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:5.04,w:9.2,h:0.22,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
+  s7.addText(s7Insight,{x:0.55,y:5.05,w:8.9,h:0.2,fontSize:8,color:C.white,fontFace:"Calibri",valign:"middle"});
   footer(s7,D);
 
   // S8 PRIORITY RECOMMENDATIONS
@@ -1118,14 +1143,18 @@ app.get("/version", (req, res) => {
 
 // POST /generate — accepts multipart, starts background job, returns jobId immediately
 app.post("/generate", upload.fields([
-  { name: "majesticCsv",      maxCount: 1 },
-  { name: "screamingFrogCsv", maxCount: 1 },
+  { name: "majesticCsv",        maxCount: 1 },
+  { name: "screamingFrogCsv",   maxCount: 1 },
+  { name: "screamingFrogComp1", maxCount: 1 },
+  { name: "screamingFrogComp2", maxCount: 1 },
 ]), (req, res) => {
   const jobId = createJob();
 
   // Parse files into buffers now (before async work)
   const majesticBuf      = req.files?.majesticCsv?.[0]?.buffer      || null;
-  const screamingFrogBuf = req.files?.screamingFrogCsv?.[0]?.buffer || null;
+  const screamingFrogBuf   = req.files?.screamingFrogCsv?.[0]?.buffer   || null;
+  const screamingFrogComp1 = req.files?.screamingFrogComp1?.[0]?.buffer || null;
+  const screamingFrogComp2 = req.files?.screamingFrogComp2?.[0]?.buffer || null;
   const data = JSON.parse(req.body.data || "{}");
 
   // Respond immediately with job ID
@@ -1153,6 +1182,14 @@ app.post("/generate", upload.fields([
         if (!data.missingDesc   && sf.sfMissingDesc)   data.missingDesc   = sf.sfMissingDesc;
         if (!data.titlesTooLong && sf.sfTitleTooLong)  data.titlesTooLong = sf.sfTitleTooLong;
         if (!data.missingH1     && sf.sfMissingH1)     data.missingH1     = sf.sfMissingH1;
+      }
+      if (screamingFrogComp1) {
+        const sfC1 = parseScreamingFrogCsv(screamingFrogComp1);
+        data.sfComp1 = sfC1.sf || null;
+      }
+      if (screamingFrogComp2) {
+        const sfC2 = parseScreamingFrogCsv(screamingFrogComp2);
+        data.sfComp2 = sfC2.sf || null;
       }
 
       // SEMrush Site Audit — use project ID from form or env variable
