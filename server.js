@@ -143,88 +143,59 @@ async function brightlocalCitationAudit(domain, businessName, reportId, location
       console.log("BrightLocal: no report ID or location ID provided — skipping.");
       return {};
     }
-    console.log("BrightLocal: triggering report run for report", REPORT_ID);
-    const runRes  = await fetch(`${BASE}/v2/ct/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ "api-key": key, "report-id": REPORT_ID })
-    });
-    const runData = await runRes.json();
-    console.log("BrightLocal run response:", JSON.stringify(runData).slice(0, 200));
+    // Skip re-running the report — just fetch the most recent results directly
+    // Running takes 90s+ and the existing data is fresh enough for a sales audit
+    console.log("BrightLocal: fetching existing results for report", REPORT_ID);
 
-    // Step 2: Poll for completion (max 90s, every 10s)
-    for (let i = 0; i < 9; i++) {
-      await new Promise(r => setTimeout(r, 10000));
-      const pollRes  = await fetch(`${BASE}/v2/ct/get?api-key=${key}&report-id=${REPORT_ID}`);
-      const pollData = await pollRes.json();
-      console.log(`BrightLocal poll ${i+1}:`, JSON.stringify(pollData).slice(0, 200));
+    // First check report status
+    const pollRes  = await fetch(`${BASE}/v2/ct/get?api-key=${key}&report-id=${REPORT_ID}`);
+    const pollData = await pollRes.json();
+    console.log("BrightLocal report status:", JSON.stringify(pollData).slice(0, 400));
 
-      const report = pollData?.response || pollData?.report || pollData;
-      const status = report?.status || report?.report_status || "";
+    // Extract status from wherever it lives in the response
+    const reportObj = pollData?.report || pollData?.response || pollData;
+    const reportStatus = reportObj?.report_status || reportObj?.status || reportObj?.["report-status"] || "unknown";
+    const lastRun = reportObj?.last_run || reportObj?.["last-run"] || "";
+    console.log(`BrightLocal report status: ${reportStatus}, last run: ${lastRun}`);
 
-      if (status === "complete" || status === "Complete") {
-        // Step 3: Get KEY citation results — matches BrightLocal "Key Citations" tab
-        // Key citations are the important directories (Google, Yelp, Avvo etc) — scored out of 100
-        const resultsRes  = await fetch(`${BASE}/v2/ct/get-results?api-key=${key}&report-id=${REPORT_ID}&type=key`);
-        const resultsData = await resultsRes.json();
-        console.log("BrightLocal KEY results FULL:", JSON.stringify(resultsData).slice(0, 600));
+    // Get KEY citation score from the report object we already fetched
+    const keyCitationScore = parseInt(
+      reportObj?.["key-citation-score"] || reportObj?.key_citation_score || reportObj?.citation_score || 0
+    ) || null;
+    console.log(`BrightLocal: keyCitationScore=${keyCitationScore}, reportStatus=${reportStatus}`);
 
-        // Parse results — active=found, pending+possible=not found
-        const results  = resultsData?.response?.results || {};
-        const active   = Array.isArray(results?.active)   ? results.active.length   : 0;
-        const pending  = Array.isArray(results?.pending)  ? results.pending.length  : 0;
-        const possible = Array.isArray(results?.possible) ? results.possible.length : 0;
+    // Fetch KEY citation results — matches BrightLocal "Key Citations" tab
+    const resultsRes  = await fetch(`${BASE}/v2/ct/get-results?api-key=${key}&report-id=${REPORT_ID}&type=key`);
+    const resultsData = await resultsRes.json();
+    console.log("BrightLocal KEY results FULL:", JSON.stringify(resultsData).slice(0, 800));
 
-        // Count NAP errors from active listings
-        const napErrorCount = Array.isArray(results?.active)
-          ? results.active.filter(c => c["nap-status"] === "error" || c["business-name-status"] === "error" || c["address-status"] === "error" || c["phone-status"] === "error").length
-          : 0;
+    // Parse results — active=found, pending+possible=not found
+    const results  = resultsData?.response?.results || {};
+    const active   = Array.isArray(results?.active)   ? results.active.length   : 0;
+    const pending  = Array.isArray(results?.pending)  ? results.pending.length  : 0;
+    const possible = Array.isArray(results?.possible) ? results.possible.length : 0;
 
-        const found    = active;
-        const notFound = pending + possible;
-        const total    = found + notFound;
-        const correct  = found - napErrorCount;
+    // Count NAP errors from active listings
+    const napErrorCount = Array.isArray(results?.active)
+      ? results.active.filter(c => c["nap-status"] === "error" || c["business-name-status"] === "error" || c["address-status"] === "error" || c["phone-status"] === "error").length
+      : 0;
 
-        // Also fetch the Key Citation Score from v2/ct/get
-        let keyCitationScore = null;
-        try {
-          const scoreRes  = await fetch(`${BASE}/v2/ct/get?api-key=${key}&report-id=${REPORT_ID}`);
-          const scoreData = await scoreRes.json();
-          console.log("BrightLocal ct/get response:", JSON.stringify(scoreData).slice(0, 400));
-          const rep = scoreData?.response || scoreData?.report || scoreData;
-          keyCitationScore = rep?.["key-citation-score"] || rep?.key_citation_score || rep?.citation_score || null;
-        } catch(e2) { console.error("BrightLocal score fetch error:", e2.message); }
+    const found    = active;
+    const notFound = pending + possible;
+    const total    = found + notFound;
+    const correct  = found - napErrorCount;
 
-        console.log(`BrightLocal: found=${found}, notFound=${notFound}, total=${total}, napErrors=${napErrorCount}, keyCitationScore=${keyCitationScore}`);
+    console.log(`BrightLocal parsed: found=${found}, notFound=${notFound}, total=${total}, napErrors=${napErrorCount}, score=${keyCitationScore}`);
 
-        return {
-          citationsFound:    parseInt(found)||0,
-          citationsMissing:  parseInt(notFound)||0,
-          citationsTotal:    parseInt(total)||0,
-          napErrors:         parseInt(napErrorCount)||0,
-          napCorrect:        parseInt(correct)||0,
-          keyCitationScore:  keyCitationScore ? parseInt(keyCitationScore)||null : null,
-          activeListings:    parseInt(found)||0,
-          missingListings:   parseInt(notFound)||0,
-        };
-      }
-    }
-
-    // If not complete after 90s, return last known data from the report
-    console.log("BrightLocal: timed out waiting for report — fetching last results");
-    const lastRes  = await fetch(`${BASE}/v2/ct/get-results?api-key=${key}&report-id=${REPORT_ID}&type=key`);
-    const lastData = await lastRes.json();
-    const results2  = lastData?.response?.results || {};
-    const found2    = Array.isArray(results2?.active)   ? results2.active.length   : 0;
-    const notFound2 = (Array.isArray(results2?.pending)  ? results2.pending.length  : 0) +
-                      (Array.isArray(results2?.possible) ? results2.possible.length : 0);
     return {
-      citationsFound:   found2,
-      citationsMissing: notFound2,
-      citationsTotal:   found2 + notFound2,
-      napErrors:        0,
-      napCorrect:       found2,
-      keyCitationScore: null,
+      citationsFound:    parseInt(found)||0,
+      citationsMissing:  parseInt(notFound)||0,
+      citationsTotal:    parseInt(total)||0,
+      napErrors:         parseInt(napErrorCount)||0,
+      napCorrect:        parseInt(correct)||0,
+      keyCitationScore,
+      activeListings:    parseInt(found)||0,
+      missingListings:   parseInt(notFound)||0,
     };
 
   } catch(e) {
