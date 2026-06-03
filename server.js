@@ -158,32 +158,54 @@ async function brightlocalCitationAudit(domain, businessName, reportId, location
     const lastRun = reportObj?.last_run || reportObj?.["last-run"] || "";
     console.log(`BrightLocal report status: ${reportStatus}, last run: ${lastRun}`);
 
-    // Get KEY citation score from the report object we already fetched
+    // Log full report object to find key citation score field name
+    console.log("BrightLocal report object keys:", JSON.stringify(Object.keys(reportObj||{})));
+    console.log("BrightLocal report object:", JSON.stringify(reportObj||{}).slice(0, 600));
+
+    // Extract key citation score — try all known field names
     const keyCitationScore = parseInt(
-      reportObj?.["key-citation-score"] || reportObj?.key_citation_score || reportObj?.citation_score || 0
+      reportObj?.["key-citation-score"] ||
+      reportObj?.key_citation_score ||
+      reportObj?.["your_ct_count"] ||  // BrightLocal uses "your_ct_count" for found
+      0
     ) || null;
-    console.log(`BrightLocal: keyCitationScore=${keyCitationScore}, reportStatus=${reportStatus}`);
 
-    // Fetch KEY citation results — matches BrightLocal "Key Citations" tab
-    const resultsRes  = await fetch(`${BASE}/v2/ct/get-results?api-key=${key}&report-id=${REPORT_ID}&type=key`);
+    // BrightLocal ct/get-all has these summary fields on the report object:
+    // your_ct_count = found key citations
+    // total_ct_sources = total key citation sources checked
+    // your_ct_count_up = citations gained
+    const ctFound   = parseInt(reportObj?.your_ct_count     || 0);
+    const ctTotal   = parseInt(reportObj?.total_ct_sources  || 0);
+    const ctCorrect = parseInt(reportObj?.["nap_correct"]   || reportObj?.nap_correct || ctFound);
+    const ctErrors  = parseInt(reportObj?.["nap_errors"]    || reportObj?.nap_errors  || 0);
+
+    console.log(`BrightLocal summary from report: ctFound=${ctFound}, ctTotal=${ctTotal}, ctErrors=${ctErrors}, score=${keyCitationScore}`);
+
+    // Also fetch full results for NAP error details
+    const resultsRes  = await fetch(`${BASE}/v2/ct/get-results?api-key=${key}&report-id=${REPORT_ID}`);
     const resultsData = await resultsRes.json();
-    console.log("BrightLocal KEY results FULL:", JSON.stringify(resultsData).slice(0, 800));
+    console.log("BrightLocal results sample:", JSON.stringify(resultsData).slice(0, 400));
 
-    // Parse results — active=found, pending+possible=not found
-    const results  = resultsData?.response?.results || {};
-    const active   = Array.isArray(results?.active)   ? results.active.length   : 0;
-    const pending  = Array.isArray(results?.pending)  ? results.pending.length  : 0;
-    const possible = Array.isArray(results?.possible) ? results.possible.length : 0;
-
-    // Count NAP errors from active listings
-    const napErrorCount = Array.isArray(results?.active)
-      ? results.active.filter(c => c["nap-status"] === "error" || c["business-name-status"] === "error" || c["address-status"] === "error" || c["phone-status"] === "error").length
-      : 0;
-
-    const found    = active;
-    const notFound = pending + possible;
-    const total    = found + notFound;
-    const correct  = found - napErrorCount;
+    // If we got summary data from report object, use it; otherwise fall back to counting arrays
+    let found, notFound, total, napErrorCount;
+    if (ctTotal > 0) {
+      found        = ctFound;
+      notFound     = ctTotal - ctFound;
+      total        = ctTotal;
+      napErrorCount = ctErrors;
+    } else {
+      // Fallback: count from results arrays
+      const results  = resultsData?.response?.results || {};
+      const active   = Array.isArray(results?.active)   ? results.active.length   : 0;
+      const pending  = Array.isArray(results?.pending)  ? results.pending.length  : 0;
+      const possible = Array.isArray(results?.possible) ? results.possible.length : 0;
+      found         = active;
+      notFound      = pending + possible;
+      total         = found + notFound;
+      napErrorCount = Array.isArray(results?.active)
+        ? results.active.filter(c => c["nap-status"]==="error"||c["business-name-status"]==="error"||c["address-status"]==="error"||c["phone-status"]==="error").length
+        : 0;
+    }
 
     console.log(`BrightLocal parsed: found=${found}, notFound=${notFound}, total=${total}, napErrors=${napErrorCount}, score=${keyCitationScore}`);
 
@@ -192,7 +214,7 @@ async function brightlocalCitationAudit(domain, businessName, reportId, location
       citationsMissing:  parseInt(notFound)||0,
       citationsTotal:    parseInt(total)||0,
       napErrors:         parseInt(napErrorCount)||0,
-      napCorrect:        parseInt(correct)||0,
+      napCorrect:        parseInt(found - napErrorCount)||0,
       keyCitationScore,
       activeListings:    parseInt(found)||0,
       missingListings:   parseInt(notFound)||0,
@@ -943,8 +965,8 @@ async function buildPptx(data, narrative) {
       s7.addText(g.label,{x:3.7,y:y+0.06,w:1.8,h:0.3,fontSize:10,bold:isTop,color:isTop?C.white:C.darkBlue,fontFace:"Calibri",valign:"middle",margin:0});
 
       // Volume bar
-      s7.addShape(pres.shapes.RECTANGLE,{x:5.6,y:y+0.16,w:3.6,h:0.12,fill:{color:isTop?"4A90D9":"E2EAF0"},line:{color:"none",width:0}});
-      s7.addShape(pres.shapes.RECTANGLE,{x:5.6,y:y+0.16,w:barW,h:0.12,fill:{color:isTop?C.white:C.red},line:{color:"none",width:0}});
+      s7.addShape(pres.shapes.RECTANGLE,{x:5.6,y:y+0.16,w:3.6,h:0.12,fill:{color:isTop?"4A90D9":"E2EAF0"},line:{color:isTop?"4A90D9":"E2EAF0",width:0}});
+      s7.addShape(pres.shapes.RECTANGLE,{x:5.6,y:y+0.16,w:barW,h:0.12,fill:{color:isTop?C.white:C.red},line:{color:isTop?C.white:C.red,width:0}});
 
       // Volume label
       const volLabel = g.volume >= 1000 ? `${Math.round(g.volume/1000)}k` : String(g.volume);
