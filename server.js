@@ -596,8 +596,9 @@ const footer=(s,d)=>{
   s.addText(`Prepared by ${d.preparedBy} for ${d.clientName}`,{x:0.4,y:5.32,w:7,h:0.22,fontSize:8,color:C.midGray,fontFace:"Calibri"});
   s.addText(d.domain,{x:7.4,y:5.32,w:2.2,h:0.22,fontSize:8,color:C.midGray,fontFace:"Calibri",align:"right"});
 };
-const slbl=(s,t)=>s.addText(t,{x:0.5,y:0.26,w:9,h:0.2,fontSize:9,color:C.lightBlue,bold:true,charSpacing:4,fontFace:"Calibri"});
-const stit=(s,t)=>s.addText(t,{x:0.5,y:0.52,w:9,h:0.72,fontSize:32,bold:true,color:C.darkBlue,fontFace:"Calibri"});
+// Unified slide header — eyebrow label + bold title as one visual unit
+const slbl=(s,t)=>s.addText(t,{x:0.5,y:0.3,w:9,h:0.22,fontSize:10,color:C.lightBlue,bold:true,charSpacing:3,fontFace:"Calibri"});
+const stit=(s,t)=>s.addText(t,{x:0.5,y:0.52,w:9,h:0.78,fontSize:34,bold:true,color:C.darkBlue,fontFace:"Calibri"});
 
 function kpi(pres,s,x,y,w,h,val,lbl,sub,color){
   s.addShape(pres.shapes.RECTANGLE,{x,y,w,h,fill:{color:C.white},shadow:ms(),line:{color:"E2EAF0",width:0.5}});
@@ -756,7 +757,7 @@ async function buildPptx(data, narrative) {
   // S5 PAGE SPEED
   const s5=pres.addSlide(); s5.background={color:C.white};
   slbl(s5,"SPEED & CORE WEB VITALS · Google PageSpeed Insights");
-  stit(s5,"Slow pages lose clients before they read a word.");
+  stit(s5,"Slow pages cost you clients.");
   s5.addText("Google uses page speed as a direct ranking factor. For law firms, every second of delay costs consultations.",{x:0.5,y:1.38,w:9,h:0.35,fontSize:11,color:C.dark,fontFace:"Calibri"});
   await drawGauge(pres,s5, 0.4,1.8,2.3,2.5, D.psMobile||D.psPerformance||0, "Mobile");
   await drawGauge(pres,s5, 2.9,1.8,2.3,2.5, D.psDesktop||0, "Desktop");
@@ -835,30 +836,30 @@ async function buildPptx(data, narrative) {
   ];
 
   rows.forEach((row,i)=>{
-    const y=1.88+i*0.55;
+    const y=1.88+i*0.46;
     const bg=i%2===0?C.white:C.offWhite;
-    s6.addShape(pres.shapes.RECTANGLE,{x:0.4,y,w:9.2,h:0.52,fill:{color:bg},line:{color:"E2EAF0",width:0.3}});
-    s6.addText(row.label,{x:colXs[0],y:y+0.1,w:2.0,h:0.32,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
+    s6.addShape(pres.shapes.RECTANGLE,{x:0.4,y,w:9.2,h:0.43,fill:{color:bg},line:{color:"E2EAF0",width:0.3}});
+    s6.addText(row.label,{x:colXs[0],y:y+0.07,w:2.0,h:0.32,fontSize:10,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
     const clientColor=scoreColor(parseFloat(String(row.client)),row.bench);
-    s6.addText(String(row.client||"—"),{x:colXs[1],y:y+0.1,w:colW,h:0.32,fontSize:12,bold:true,color:clientColor,fontFace:"Calibri",margin:0});
+    s6.addText(String(row.client||"—"),{x:colXs[1],y:y+0.07,w:colW,h:0.32,fontSize:12,bold:true,color:clientColor,fontFace:"Calibri",margin:0});
     if(hasComps){
-      s6.addText(String(row.comp1||"—"),{x:colXs[2],y:y+0.1,w:colW,h:0.32,fontSize:11,color:C.midGray,fontFace:"Calibri",margin:0});
-      s6.addText(String(row.comp2||"—"),{x:colXs[3],y:y+0.1,w:colW,h:0.32,fontSize:11,color:C.midGray,fontFace:"Calibri",margin:0});
-      s6.addText(row.bench?.label||"—",{x:colXs[4],y:y+0.1,w:1.5,h:0.32,fontSize:10,bold:true,color:C.emerald,fontFace:"Calibri",margin:0});
+      s6.addText(String(row.comp1||"—"),{x:colXs[2],y:y+0.07,w:colW,h:0.32,fontSize:11,color:C.midGray,fontFace:"Calibri",margin:0});
+      s6.addText(String(row.comp2||"—"),{x:colXs[3],y:y+0.07,w:colW,h:0.32,fontSize:11,color:C.midGray,fontFace:"Calibri",margin:0});
+      s6.addText(row.bench?.label||"—",{x:colXs[4],y:y+0.07,w:1.5,h:0.32,fontSize:10,bold:true,color:C.emerald,fontFace:"Calibri",margin:0});
     } else {
-      s6.addText(row.bench?.label||"—",{x:colXs[2],y:y+0.1,w:colW,h:0.32,fontSize:11,bold:true,color:C.emerald,fontFace:"Calibri",margin:0});
-      s6.addText(row.bench?.note||"",  {x:colXs[3],y:y+0.1,w:colW,h:0.32,fontSize:9,color:C.midGray,fontFace:"Calibri",italic:true,margin:0});
+      s6.addText(row.bench?.label||"—",{x:colXs[2],y:y+0.07,w:colW,h:0.32,fontSize:11,bold:true,color:C.emerald,fontFace:"Calibri",margin:0});
+      s6.addText(row.bench?.note||"",  {x:colXs[3],y:y+0.07,w:colW,h:0.32,fontSize:9,color:C.midGray,fontFace:"Calibri",italic:true,margin:0});
     }
   });
 
   // Legend
-  s6.addShape(pres.shapes.RECTANGLE,{x:0.4,y:5.2,w:9.2,h:0.15,fill:{color:C.offWhite},line:{color:"E2EAF0",width:0}});
-  s6.addShape(pres.shapes.RECTANGLE,{x:0.5,y:5.23,w:0.18,h:0.08,fill:{color:C.emerald},line:{color:C.emerald,width:0}});
-  s6.addText("At/above benchmark",{x:0.72,y:5.21,w:2.2,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri"});
-  s6.addShape(pres.shapes.RECTANGLE,{x:3.0,y:5.23,w:0.18,h:0.08,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
-  s6.addText("Close to benchmark",{x:3.22,y:5.21,w:2.0,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri"});
-  s6.addShape(pres.shapes.RECTANGLE,{x:5.4,y:5.23,w:0.18,h:0.08,fill:{color:C.red},line:{color:C.red,width:0}});
-  s6.addText("Below benchmark",{x:5.62,y:5.21,w:2.0,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri"});
+  s6.addShape(pres.shapes.RECTANGLE,{x:0.4,y:5.12,w:9.2,h:0.15,fill:{color:C.offWhite},line:{color:"E2EAF0",width:0}});
+  s6.addShape(pres.shapes.RECTANGLE,{x:0.5,y:5.14,w:0.18,h:0.08,fill:{color:C.emerald},line:{color:C.emerald,width:0}});
+  s6.addText("At/above benchmark",{x:0.72,y:5.12,w:2.2,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri"});
+  s6.addShape(pres.shapes.RECTANGLE,{x:3.0,y:5.14,w:0.18,h:0.08,fill:{color:C.lightBlue},line:{color:C.lightBlue,width:0}});
+  s6.addText("Close to benchmark",{x:3.22,y:5.12,w:2.0,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri"});
+  s6.addShape(pres.shapes.RECTANGLE,{x:5.4,y:5.14,w:0.18,h:0.08,fill:{color:C.red},line:{color:C.red,width:0}});
+  s6.addText("Below benchmark",{x:5.62,y:5.12,w:2.0,h:0.16,fontSize:7,color:C.midGray,fontFace:"Calibri"});
   footer(s6,D);
 
   // S7 CONTENT AUTHORITY + COMPETITOR GAP
@@ -881,7 +882,7 @@ async function buildPptx(data, narrative) {
   stit(s7, s7Title);
 
   // ── LEFT PANEL: Site architecture + keyword rankings ──────────
-  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:1.72,w:2.9,h:3.62,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:1.72,w:2.9,h:3.48,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
 
   // Keyword ranking chips
   s7.addText("KEYWORD RANKINGS",{x:0.5,y:1.82,w:2.7,h:0.2,fontSize:8,bold:true,color:C.lightBlue,charSpacing:2,fontFace:"Calibri"});
@@ -915,7 +916,7 @@ async function buildPptx(data, narrative) {
   });
 
   // ── RIGHT PANEL: Competitor content gap ───────────────────────
-  s7.addShape(pres.shapes.RECTANGLE,{x:3.5,y:1.72,w:6.1,h:3.62,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+  s7.addShape(pres.shapes.RECTANGLE,{x:3.5,y:1.72,w:6.1,h:3.48,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
 
   if (hasCG) {
     // Competitor domains header
@@ -931,7 +932,7 @@ async function buildPptx(data, narrative) {
     // Gap cluster rows
     const displayGaps = CG.clustered.slice(0,7);
     displayGaps.forEach((g,i)=>{
-      const y=2.3+i*0.48;
+      const y=2.26+i*0.44;
       const maxVol = CG.clustered[0].volume || 1;
       const barW   = Math.max(0.1, Math.min(3.6, 3.6*(g.volume/maxVol)));
       const isTop  = i === 0;
@@ -985,8 +986,8 @@ async function buildPptx(data, narrative) {
     : !hasSF
     ? "Upload a Screaming Frog Crawl Overview CSV for detailed content analysis. Add competitor domains to enable gap analysis."
     : `📊  ${SF.htmlPages||0} HTML pages crawled — ${(SF.titlesOver60||0)+(SF.metaDuplicate||0)+(SF.lowContentPages||0)} content issues identified. Add SEMrush competitors to unlock gap analysis.`;
-  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:5.42,w:9.2,h:0.42,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
-  s7.addText(s7Insight,{x:0.55,y:5.44,w:8.9,h:0.38,fontSize:9,color:C.white,fontFace:"Calibri",valign:"middle"});
+  s7.addShape(pres.shapes.RECTANGLE,{x:0.4,y:5.3,w:9.2,h:0.38,fill:{color:C.darkBlue},line:{color:C.darkBlue,width:0}});
+  s7.addText(s7Insight,{x:0.55,y:5.32,w:8.9,h:0.34,fontSize:9,color:C.white,fontFace:"Calibri",valign:"middle"});
   footer(s7,D);
 
   // S8 PRIORITY RECOMMENDATIONS
