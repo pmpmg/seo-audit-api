@@ -333,18 +333,14 @@ Return ONLY valid JSON, no markdown:
 {
   "executiveSummary": "One sentence — the single biggest opportunity on this site.",
   "whatIsWorking": [
-    {"title":"Short title under 6 words","sub":"One sentence explanation based on the data."},
+    {"title":"Short title under 6 words — no punctuation","sub":"One SHORT sentence, max 18 words. State ONE fact. Never list multiple numbers or metrics. No em-dashes."},
     {"title":"...","sub":"..."},
     {"title":"...","sub":"..."},
     {"title":"...","sub":"..."},
     {"title":"...","sub":"..."},
     {"title":"...","sub":"..."}
   ],
-  "problems": [
-    {"num":"01","title":"Short title under 6 words","stat":"Key metric from data","body":"2-3 sentences explaining the problem and its impact on client inquiries. No competitor names.","tag":"High impact · Low effort"},
-    {"num":"02","title":"...","stat":"...","body":"...","tag":"High impact · Medium effort"},
-    {"num":"03","title":"...","stat":"...","body":"...","tag":"High impact · High effort"}
-  ],
+  "problems": [],
   "actions": [
     {"n":"1","title":"Short action title","body":"One sentence on what to do and why. No timelines.","impact":"High","effort":"Low"},
     {"n":"2","title":"...","body":"...","impact":"High","effort":"Med"},
@@ -601,38 +597,69 @@ async function buildPptx(data, narrative) {
     {title:"Mobile responsive",        sub:"Site renders correctly on mobile devices."},
   ];
   for(let i=0;i<6;i++){
-    const col=i%3,row=Math.floor(i/3),x=0.4+col*3.1,y=1.9+row*1.55;
-    s3.addShape(pres.shapes.RECTANGLE,{x,y,w:2.9,h:1.35,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
+    const col=i%3,row=Math.floor(i/3),x=0.4+col*3.1,y=1.82+row*1.58;
+    s3.addShape(pres.shapes.RECTANGLE,{x,y,w:2.9,h:1.42,fill:{color:C.offWhite},shadow:ms(),line:{color:"E2EAF0",width:0.3}});
     s3.addShape(pres.shapes.RECTANGLE,{x,y,w:2.9,h:0.05,fill:{color:C.emerald},line:{color:C.emerald,width:0}});
     drawCheckIcon(pres,s3, x+0.18, y+0.18);
     s3.addText(wins[i]?.title||"",{x:x+0.82,y:y+0.18,w:1.95,h:0.32,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
-    s3.addText(wins[i]?.sub||"",  {x:x+0.82,y:y+0.52,w:1.95,h:0.55,fontSize:9,color:C.midGray,fontFace:"Calibri",margin:0});
+    s3.addText(wins[i]?.sub||"",  {x:x+0.82,y:y+0.52,w:1.95,h:0.72,fontSize:9,color:C.midGray,fontFace:"Calibri",margin:0});
   }
   footer(s3,D);
 
-  // S4 PROBLEMS
+  // S4 TOP ISSUES — data-driven, replaces "Three Patterns" narrative slide
   const s4=pres.addSlide(); s4.background={color:C.white};
-  slbl(s4,"WHAT'S COSTING YOU CLIENTS"); stit(s4,"Three patterns, not a hundred problems.");
-  s4.addText("Each of these is a template-level fix — meaning one change clears hundreds of issues at once.",{x:0.5,y:1.38,w:9,h:0.35,fontSize:11,color:C.dark,fontFace:"Calibri"});
-  const probs=narrative.problems||[
-    {num:"01",title:"Broken structured data",stat:`${D.schemaErrors||0} errors`,body:`Every page carries the same broken LocalBusiness schema. One template fix clears all ${D.schemaErrors||0}.`,tag:"High impact · Low effort",color:C.red},
-    {num:"02",title:"Metadata gaps",stat:`${(D.missingDesc||0)+(D.titlesTooLong||0)} pages affected`,body:`${D.missingDesc||0} pages have no meta description. ${D.titlesTooLong||0} titles are cut off in search results.`,tag:"High impact · Medium effort",color:C.lightBlue},
-    {num:"03",title:"Thin content & weak links",stat:`${D.thinPages||0} light pages`,body:`${D.thinPages||0} pages appear thin to search engines. ${D.noAnchors||0} internal links carry no anchor text.`,tag:"High impact · High effort",color:C.emerald},
+  slbl(s4,"WHAT'S COSTING YOU CLIENTS");
+  stit(s4,"The biggest opportunities, by the numbers.");
+  s4.addText("These are the highest-impact issues found in the crawl — each one affects rankings, traffic, or client trust.",{x:0.5,y:1.38,w:9,h:0.3,fontSize:11,color:C.dark,fontFace:"Calibri"});
+
+  // Build top issues from real data — ranked by severity/count
+  const SF4 = D.sf || {};
+  const totalPages4 = SF4.htmlPages || D.pagesCrawled || 0;
+
+  // Score each issue by: count * impact weight
+  const allIssues4 = [
+    { title:"Title tags too long",        stat:`${SF4.titlesOver60||D.titlesTooLong||0} of ${totalPages4} pages`,   val:SF4.titlesOver60||D.titlesTooLong||0, weight:3, why:"Titles truncate in search results, hurting click-through rates on every affected page.",    fix:"Rewrite titles under 60 characters with primary keyword near the front.", effort:"Low"  },
+    { title:"Meta descriptions too long", stat:`${SF4.metaOver155||0} of ${totalPages4} pages`,                     val:SF4.metaOver155||0,                   weight:2, why:"Oversized meta descriptions are rewritten by Google, removing your carefully crafted messaging.", fix:"Trim meta descriptions to 150 characters max with a clear call-to-action.", effort:"Low"  },
+    { title:"Duplicate meta descriptions",stat:`${SF4.metaDuplicate||D.missingDesc||0} of ${totalPages4} pages`,    val:SF4.metaDuplicate||D.missingDesc||0,  weight:3, why:"Duplicate descriptions confuse search engines on which page to rank for a given query.",     fix:"Write unique descriptions for each page targeting its specific keyword.",   effort:"Med"  },
+    { title:"Thin or low content pages",  stat:`${SF4.lowContentPages||D.thinPages||0} of ${totalPages4} pages`,    val:SF4.lowContentPages||D.thinPages||0,  weight:4, why:"Pages with minimal content signal low quality to Google and rarely earn rankings.",            fix:"Expand thin pages with 500+ words of relevant, specific content.",         effort:"High" },
+    { title:"Missing canonical tags",     stat:`${SF4.missingCanonical||0} of ${totalPages4} pages`,                val:SF4.missingCanonical||0,              weight:3, why:"Without canonicals, link equity splits across duplicate URLs, diluting ranking power.",        fix:"Add self-referencing canonical tags to all indexable pages via template.",  effort:"Low"  },
+    { title:"Images missing alt text",    stat:`${SF4.missingAltText||D.missingAlt||0} images`,                     val:SF4.missingAltText||D.missingAlt||0,  weight:2, why:"Missing alt text loses image search traffic and creates accessibility compliance risk.",         fix:"Add descriptive alt text to all images including target keyword where natural.", effort:"Low" },
+    { title:"Schema markup errors",       stat:`${D.schemaErrors||0} errors`,                                        val:D.schemaErrors||0,                    weight:4, why:"Broken schema blocks rich results in search, reducing click-through rates significantly.",     fix:"Fix LocalBusiness and Attorney schema using Google's Rich Results Test.",   effort:"Low"  },
+    { title:"Redirect chains",            stat:`${SF4.redirects3xx||0} redirects`,                                   val:SF4.redirects3xx||0,                  weight:2, why:"Redirect chains slow page load and bleed link equity through each extra hop.",                fix:"Update internal links to point directly to final destination URLs.",        effort:"Low"  },
+  ].filter(iss => iss.val > 0)
+   .sort((a,b) => (b.val * b.weight) - (a.val * a.weight))
+   .slice(0,3);
+
+  // Fallback if no SF data
+  const top3Issues = allIssues4.length >= 3 ? allIssues4 : [
+    {title:"Run a site crawl",stat:"Upload Screaming Frog CSV",why:"A crawl reveals the exact issues holding back rankings.",fix:"Run Screaming Frog on the domain and upload the Crawl Overview CSV.",effort:"Low"},
+    {title:"Check schema markup",stat:`${D.schemaErrors||0} known errors`,why:"Schema errors block rich results in search.",fix:"Validate schema using Google's Rich Results Test.",effort:"Low"},
+    {title:"Review metadata",stat:`${totalPages4} pages to audit`,why:"Metadata quality directly impacts click-through rates.",fix:"Audit title tags and meta descriptions for length and uniqueness.",effort:"Med"},
   ];
-  const pColors=[C.red,C.lightBlue,C.emerald];
-  const pSymbols=["</>","{ }","⚡"];
-  for(let i=0;i<3;i++){
-    const p=probs[i]||{}, x=0.4+i*3.1;
-    s4.addShape(pres.shapes.RECTANGLE,{x,y:1.9,w:2.9,h:3.15,fill:{color:C.white},shadow:ms(),line:{color:"E2EAF0",width:0.5}});
-    s4.addShape(pres.shapes.RECTANGLE,{x,y:1.9,w:2.9,h:0.68,fill:{color:pColors[i]},line:{color:pColors[i],width:0}});
-    s4.addText(pSymbols[i],{x:x+0.12,y:2.0,w:0.55,h:0.44,fontSize:14,bold:true,color:C.white,fontFace:"Calibri",align:"center",margin:0});
-    s4.addText(p.num||`0${i+1}`,{x:x+0.1,y:1.92,w:2.7,h:0.64,fontSize:26,bold:true,color:C.white,fontFace:"Calibri",align:"right",margin:0});
-    s4.addText(p.title||"",{x:x+0.18,y:2.65,w:2.55,h:0.42,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri"});
-    s4.addText(p.stat||"", {x:x+0.18,y:3.1, w:2.55,h:0.24,fontSize:10,bold:true,color:pColors[i],fontFace:"Calibri"});
-    s4.addText(p.body||"", {x:x+0.18,y:3.36,w:2.55,h:1.18,fontSize:9,color:C.dark,fontFace:"Calibri"});
-    s4.addShape(pres.shapes.RECTANGLE,{x:x+0.18,y:4.75,w:2.55,h:0.22,fill:{color:C.offWhite},line:{color:"E2EAF0",width:0}});
-    s4.addText(p.tag||"",{x:x+0.18,y:4.72,w:2.55,h:0.22,fontSize:8,bold:true,color:C.midGray,fontFace:"Calibri",align:"center"});
-  }
+
+  const pColors4 = [C.red, C.lightBlue, C.emerald];
+  top3Issues.forEach((p,i) => {
+    const x = 0.4 + i * 3.1;
+    // Card
+    s4.addShape(pres.shapes.RECTANGLE,{x,y:1.82,w:2.9,h:3.32,fill:{color:C.white},shadow:ms(),line:{color:"E2EAF0",width:0.5}});
+    // Colored header bar
+    s4.addShape(pres.shapes.RECTANGLE,{x,y:1.82,w:2.9,h:0.7,fill:{color:pColors4[i]},line:{color:pColors4[i],width:0}});
+    // Number
+    s4.addText(`0${i+1}`,{x:x+0.1,y:1.84,w:2.7,h:0.66,fontSize:26,bold:true,color:C.white,fontFace:"Calibri",align:"right",margin:0});
+    // Issue title
+    s4.addText(p.title,{x:x+0.18,y:2.6,w:2.55,h:0.38,fontSize:11,bold:true,color:C.darkBlue,fontFace:"Calibri",margin:0});
+    // Stat in brand color
+    s4.addText(p.stat,{x:x+0.18,y:3.0,w:2.55,h:0.26,fontSize:10,bold:true,color:pColors4[i],fontFace:"Calibri",margin:0});
+    // Why it matters
+    s4.addText(p.why,{x:x+0.18,y:3.28,w:2.55,h:0.7,fontSize:9,color:C.dark,fontFace:"Calibri",margin:0});
+    // Fix
+    s4.addShape(pres.shapes.RECTANGLE,{x:x+0.18,y:4.0,w:2.55,h:0.7,fill:{color:C.offWhite},line:{color:"E2EAF0",width:0.3}});
+    s4.addText("FIX:",{x:x+0.26,y:4.04,w:0.4,h:0.62,fontSize:8,bold:true,color:pColors4[i],fontFace:"Calibri",valign:"top",margin:0});
+    s4.addText(p.fix,{x:x+0.62,y:4.04,w:2.0,h:0.62,fontSize:8,color:C.dark,fontFace:"Calibri",valign:"top",margin:0});
+    // Effort tag
+    s4.addShape(pres.shapes.RECTANGLE,{x:x+0.18,y:4.78,w:2.55,h:0.24,fill:{color:C.offWhite},line:{color:"E2EAF0",width:0}});
+    s4.addText(`Effort: ${p.effort||"Med"}  ·  High impact`,{x:x+0.18,y:4.78,w:2.55,h:0.24,fontSize:8,bold:true,color:C.midGray,fontFace:"Calibri",align:"center",margin:0});
+  });
   footer(s4,D);
 
   // S5 PAGE SPEED
